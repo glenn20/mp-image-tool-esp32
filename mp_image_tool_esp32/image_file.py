@@ -1,0 +1,147 @@
+# MIT License: Copyright (c) 2023 @glenn20
+
+from __future__ import annotations
+
+import math
+
+from colorama import Fore
+
+from .partition_table import PartitionTable
+
+MB = 0x100_000  # 1 megabyte
+KB = 0x400  # 1 kilobyte
+
+# Fields in the image header
+HEADER_SIZE = 8 + 16  # Size of the image file headers
+FLASH_SIZE_OFFSET = 3  # Flash size is in high 4 bits of byte 3 in file
+CHIP_ID_OFFSET = 12  # Chip-type is in bytes 12 and 13 of file
+
+APP_IMAGE_MAGIC = b"\xe9"  # Starting bytes for firmware files
+IMAGE_OFFSET = 0x1000  # Offset in flash to write firmware (set to 0 on S3 and C2)
+
+# Map from chip ids in the image file header to esp32 chip names.
+CHIP_IDS = {
+    0: "esp32",
+    2: "esp32s2",
+    9: "esp32s3",
+    12: "esp32c2",
+    5: "esp32c3",
+    13: "esp32c6",
+}
+
+
+# Get the chip type name, flash size and image file offset from the image header
+# - chip_type: "esp32", "esp32s2", "esp32s3", "esp32c2" or "esp32c6"
+# - flash_size: 4*MB, 8*MB, 16*MB, 32*MB, 64*MB or 128*MB
+# - offset:
+#   - 0x1000 (if esp32 or esp32s2)
+#   - 0 (if esp32s3 or esp32c2)
+def load_header(header: bytes) -> tuple[str, int, int]:
+    if header[: len(APP_IMAGE_MAGIC)] != APP_IMAGE_MAGIC:
+        raise ValueError(f"Firmware magic byte ({APP_IMAGE_MAGIC}) not found at byte 0")
+    flash_id = header[FLASH_SIZE_OFFSET] >> 4
+    flash_size = (2**flash_id) * MB
+    chip_id = header[CHIP_ID_OFFSET] | (header[CHIP_ID_OFFSET + 1] << 8)
+    chip_name = CHIP_IDS.get(chip_id, str(chip_id))
+    # S3 and C2 image files are written to flash starting at offset 0
+    image_offset = 0 if chip_name in ("esp32s3", "esp32c3") else IMAGE_OFFSET
+    return chip_name, flash_size, image_offset
+
+
+# Set the flash size in the supplied image file header
+def set_header_flash_size(header: bytearray | memoryview, flash_size: int = 0) -> None:
+    if flash_size == 0:
+        return
+    size_MB = flash_size // MB
+    if not (0 <= size_MB <= 128):
+        raise ValueError(f"Invalid flash size: {flash_size:#x}.")
+    # Flash size tag is written into top 4 bits of 4th byte of file
+    header[FLASH_SIZE_OFFSET] = (round(math.log2(size_MB)) << 4) | (
+        header[FLASH_SIZE_OFFSET] & 0xF
+    )
+
+
+# Provide a detailed printout of the partition table
+def print_table(table: PartitionTable) -> None:
+    colors = dict(g=Fore.GREEN, r=Fore.RED, _=Fore.RESET)
+
+    print(
+        "{g}Partition table (flash size: {r}{size}MB{g}):".format(
+            size=table.flash_size // MB, **colors
+        )
+    )
+    print(Fore.CYAN, end="")
+    table.print()
+    print(Fore.RESET, end="")
+    table.check()
+    if table.app_part:
+        print(
+            "Micropython app fills {used:0.1f}% of {app} partition "
+            "({rem} kB unused)".format(
+                used=100 * table.app_size / table.app_part.size,
+                app=table.app_part.label_name,
+                rem=(table.app_part.size - table.app_size) // KB,
+            )
+        )
+    vfs = table[-1] if table[-1].label_name in ("vfs", "ffat") else None
+    if vfs:
+        print(f'Filesystem partition "{vfs.label_name}" is {vfs.size / MB:0.1f} MB.')
+
+
+# Load an image file and check the partition table
+def load_partition_table(filename: str, verbose=False) -> PartitionTable:
+    if verbose:
+        print(f"{Fore.GREEN}Opening image file: {filename}...{Fore.RESET}")
+    with open(filename, "rb") as fin:
+        chip_name, flash_size, image_offset = load_header(fin.read(HEADER_SIZE))
+        table = PartitionTable(flash_size)
+        fin.seek(table.PART_TABLE_OFFSET - image_offset)
+        table.from_bytes(fin.read(table.PART_TABLE_SIZE))
+        table.app_size = (  # Get app size from the size of the file.
+            fin.seek(0, 2) - table.app_part.offset - image_offset
+        )
+        if verbose:
+            print(f"Chip type: {chip_name}")
+            print(f"Flash size: {flash_size // MB}MB")
+            print(
+                f"Micropython App size: {table.app_size:#x} bytes "
+                f"({table.app_size // KB:,d} KB)"
+            )
+            print_table(table)
+    return table
+
+
+def save_app_image(
+    input: str, output: str, table: PartitionTable, verbose=False
+) -> int:
+    if verbose:
+        print(f"Writing micropython app image file: {output}...")
+    with open(input, "rb") as fin, open(output, "wb") as fout:
+        _, _, image_offset = load_header(fin.read(HEADER_SIZE))
+        fin.seek(table.app_part.offset - image_offset)
+        fout.write(fin.read())
+        return fout.tell()
+
+
+def copy_with_new_table(
+    input: str, output: str, table: PartitionTable, verbose=False
+) -> int:
+    if verbose:
+        print(f"{Fore.GREEN}Writing output file: {output}...{Fore.RESET}")
+        print_table(table)
+    with open(input, "rb") as fin, open(output, "wb") as fout:
+        header = bytearray(HEADER_SIZE)
+        fin.readinto(header)
+        _, _, image_offset = load_header(header)
+        # Update the flash size in the image file header
+        set_header_flash_size(header, table.flash_size)
+        fout.write(header)
+        assert fin.tell() == fout.tell()
+        fout.write(fin.read(table.PART_TABLE_OFFSET - image_offset - len(header)))
+        assert fin.tell() == fout.tell()
+        fout.write(table.to_bytes())
+        fin.seek(table.PART_TABLE_SIZE, 1)
+        assert fin.tell() == fout.tell()
+        fout.write(fin.read())
+        assert fin.tell() == fout.tell()
+        return fout.tell()
