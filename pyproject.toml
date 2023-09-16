@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mp-image-tool-esp32"
+description = "Tool for manipulating micropython image files"
+readme = "README.md"
+authors = [{name = "glenn20", email = "6965319+glenn20@users.noreply.github.com"}]
+urls = {Homepage = "https://github.com/glenn20/mp-image-tool-esp32"}
+license = {text = "MIT"}
+classifiers = [
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Embedded Systems",
+]
+requires-python = ">=3.7"
+version = "0.0.1"
+dynamic = ["dependencies"]
+
+[project.scripts]
+mp-image-tool-esp32 = "mp_image_tool_esp32.main:main"
+
+[tool.hatch.build]
+packages = ["mp_image_tool_esp32"]
+
+[tool.ruff]
+target-version = "py37"
