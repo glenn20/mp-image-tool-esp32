@@ -13,6 +13,8 @@ ESP32-S3 firmware images.
   (`mp-image-tool-esp32 filename`)
 - change the size of the flash storage for the firmware file (eg.
   `--resize-flash 8MB`)
+- rewrite the partition table to support Over-The-Air (OTA) firmware updates
+  (`--ota`)
 - change the size of the partitions which hold the micropython app firmware
   (`--app-size 0x200000`)
 - change the size of any partition (`--resize factory=0x2M,vfs=0x400K`)
