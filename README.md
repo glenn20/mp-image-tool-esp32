@@ -25,8 +25,20 @@ partition table modified according to the options provided. The original
 firmware file is not modified in any way. If no modification options are given,
 it will print the partition table of `filename`.
 
-**NOTE:** This tool is not yet packaged for installation, but it can be run from
-the repo top folder with `mp-image-tool-esp32.py [-options]  filename`.
+## Install
+
+To use without installing:
+
+```bash
+$ ./mp-image-tool-esp32.py ESP32_GENERIC-20230426-v1.20.0.bin
+```
+
+To install in your python environment:
+
+```bash
+$ python -m build
+$ pip install dist/mp_image_tool_esp32*.whl
+```
 
 ## Usage
 
