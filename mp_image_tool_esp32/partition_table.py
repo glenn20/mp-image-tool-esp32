@@ -102,7 +102,8 @@ class PartitionTable(list[Part]):
 
     def print(self) -> None:
         print(
-            "# Name             Type     SubType      Offset       Size      (End)  Flags"
+            "# Name             Type     SubType      Offset"
+            "       Size      (End)  Flags"
         )
         total: int = 0
         for p in self:

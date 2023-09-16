@@ -115,7 +115,7 @@ parser.add_argument("-a", "--app-size", help="size of factory and ota app partit
 parser.add_argument(
     "-r",
     "--resize",
-    help="resize specific partitions by name/label, eg. --resize factory=0x2M,vfs=0x400K",
+    help="resize specific partitions by label, eg. --resize factory=0x2M,vfs=0x400K",
 )
 
 
