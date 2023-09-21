@@ -11,6 +11,8 @@ ESP32-S3 firmware images.
 
 - print a summary of the partition table of a micropython esp32 firmware file
   (`mp-image-tool-esp32 filename`)
+- print a summary of the partition table on flash storage of an esp32 device
+  (`mp-image-tool-esp32 /dev/ttyUSB0`)
 - change the size of the flash storage for the firmware file (eg.
   `--resize-flash 8MB`)
 - rewrite the partition table to support Over-The-Air (OTA) firmware updates

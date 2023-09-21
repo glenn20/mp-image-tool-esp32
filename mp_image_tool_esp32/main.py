@@ -127,7 +127,7 @@ def main() -> int:
     extension = ""
 
     try:
-        table = image_file.load_partition_table(args.filename, verbose)
+        table = image_file.load_partition_table(input, verbose)
 
         if args.extract_app:
             output = filename[:-4] if filename.endswith(".bin") else filename
