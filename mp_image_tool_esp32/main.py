@@ -104,9 +104,7 @@ parser.add_argument("-n", "--dummy", help="no output file", action="store_true")
 parser.add_argument(
     "-d", "--debug", help="print additional diagnostics", action="store_true"
 )
-parser.add_argument(
-    "-o", "--ota", help="build an OTA partition table", action="store_true"
-)
+parser.add_argument("--ota", help="build an OTA partition table", action="store_true")
 parser.add_argument(
     "-x", "--extract-app", help="extract the micropython .app-bin", action="store_true"
 )

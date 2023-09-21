@@ -45,7 +45,7 @@ $ pip install dist/mp_image_tool_esp32*.whl
 ## Usage
 
 ```text
-usage: mp-image-tool-esp32.py [-h] [-q] [-n] [-d] [-o] [-x] [-f FLASH_SIZE] [-a APP_SIZE]
+usage: mp-image-tool-esp32.py [-h] [-q] [-n] [-d] [-x] [-f FLASH_SIZE] [-a APP_SIZE]
                               [-r RESIZE]
                               filename
 ```
@@ -57,7 +57,7 @@ usage: mp-image-tool-esp32.py [-h] [-q] [-n] [-d] [-o] [-x] [-f FLASH_SIZE] [-a 
   -q, --quiet           mute program output
   -n, --dummy           no output file
   -d, --debug           print additional diagnostics
-  -o, --ota             build an OTA partition table
+  --ota                 build an OTA partition table
   -x, --extract-app     extract the micropython .app-bin
   -f FLASH_SIZE, --flash-size FLASH_SIZE
                         size of flash for new partition table
