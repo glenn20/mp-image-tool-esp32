@@ -105,7 +105,6 @@ class PartitionTable(list[Part]):
             "# Name             Type     SubType      Offset"
             "       Size      (End)  Flags"
         )
-        total: int = 0
         for p in self:
             total = p.offset + p.size
             size_str = (
@@ -121,8 +120,7 @@ class PartitionTable(list[Part]):
 
     def from_bytes(self, data: bytes) -> PartitionTable:
         # Build the partition table from the records in "data"
-        # TODO: initialise from iterable
-        for i in range(0, len(data), PART_LEN):
+        for i in range(0, min(len(data), PART_TABLE_SIZE) - PART_LEN, PART_LEN):
             if not (p := Part.from_bytes(data[i : i + PART_LEN])):
                 break
             self.append(p)
@@ -202,6 +200,9 @@ class PartitionTable(list[Part]):
             self[-1] = self[-1]._replace(size=flash_size - self[-1].offset)
             self.offset = self.flash_size
             self.check()
+
+    def by_name(self, name: str) -> Part | None:
+        return next(filter(lambda p: p.label_name == name, self), None)
 
     # Change size of partition (and adjusting offsets of following parts if necessary)
     def resize_part(self, name: str, new_size: int) -> None:
