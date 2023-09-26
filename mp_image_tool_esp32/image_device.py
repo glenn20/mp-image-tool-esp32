@@ -4,9 +4,9 @@ import io
 import re
 import subprocess
 import sys
-import tempfile
 from dataclasses import dataclass
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 MB = 0x100_000  # 1 megabyte
 KB = 0x400  # 1 kilobyte
@@ -48,7 +48,7 @@ def shell(command: str) -> bytes:
 # Offset should be a multiple of 0x1000 (4096), the device block size
 def read_flash(filename: str, offset: int, size: int, args="") -> bytes:
     esptool = f"esptool.py {args} --port {filename}"
-    with tempfile.NamedTemporaryFile("w+b", prefix="mp-image-tool-esp32-") as f:
+    with NamedTemporaryFile("w+b", prefix="mp-image-tool-esp32-") as f:
         shell(f"{esptool} read_flash {offset:#x} {size:#x} {f.name}")
         return Path(f.name).read_bytes()
 
@@ -57,7 +57,7 @@ def read_flash(filename: str, offset: int, size: int, args="") -> bytes:
 # Offset should be a multiple of 0x1000 (4096), the device block size
 def write_flash(filename: str, offset: int, data: bytes, args="") -> int:
     esptool = f"esptool.py {args} --port {filename}"
-    with tempfile.NamedTemporaryFile("w+b", prefix="mp-image-tool-esp32-") as f:
+    with NamedTemporaryFile("w+b", prefix="mp-image-tool-esp32-") as f:
         Path(f.name).write_bytes(data)
         shell(f"{esptool} write_flash {offset:#x} {f.name}")
     return len(data)

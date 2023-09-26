@@ -177,6 +177,10 @@ def main() -> int:
                 raise PartError(f'partition not found: "{args.erase_fs}".')
             if part.label_name not in ("vfs", "ffat"):
                 raise PartError(f'partition "{args.erase_fs}" is not a fs partition.')
+            print(
+                f"{Fore.GREEN}Erasing filesystem on partition "
+                f'"{part.label_name}"...{Fore.RESET}'
+            )
             erase_flash_region(input, part.offset, 4 * B, f"--chip {table.chip_name}")
 
         if not args.dummy and extension:

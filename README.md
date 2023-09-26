@@ -11,8 +11,6 @@ ESP32-S3 firmware images.
 
 - print a summary of the partition table of a micropython esp32 firmware file
   (`mp-image-tool-esp32 filename`)
-- print a summary of the partition table on flash storage of an esp32 device
-  (`mp-image-tool-esp32 /dev/ttyUSB0`)
 - change the size of the flash storage for the firmware file (eg.
   `--resize-flash 8MB`)
 - rewrite the partition table to support Over-The-Air (OTA) firmware updates
@@ -21,11 +19,27 @@ ESP32-S3 firmware images.
   (`--app-size 0x200000`)
 - change the size of any partition (`--resize factory=0x2M,vfs=0x400K`)
 - extract the micropython application image (`.app-bin`) from the firmware file
+  (`--extract-app`)
 
 `mp-image-tool-esp32` will create a copy of the provided firmware file with the
 partition table modified according to the options provided. The original
 firmware file is not modified in any way. If no modification options are given,
 it will print the partition table of `filename`.
+
+`mp-image-tool-esp32` also works with flash storage on esp32 devices:
+
+- print a summary of the partition table on flash storage of an esp32 device
+  (`mp-image-tool-esp32 /dev/ttyUSB0`)
+- erase a partition on an esp32 device
+  (`mp-image-tool-esp32 --erase-part nvs /dev/ttyACM0`)
+  - micropython automatically re-inits nvs partitions after being erased
+- erase a filesystem on a partition on an esp32 device
+  (`mp-image-tool-esp32 --erase-fs vfs /dev/ttyACM0`)
+  - erases the first 4 blocks of the partition - micropython will automatically
+    build a fresh filesystem on the next boot.
+
+`mp-image-tool-esp32` uses the `esptool.py` program to perform the operations on
+attached esp32 devices.
 
 ## Install
 
@@ -58,7 +72,7 @@ usage: mp-image-tool-esp32.py [-h] [-q] [-n] [-d] [-x] [-f FLASH_SIZE] [-a APP_S
   -n, --dummy           no output file
   -d, --debug           print additional diagnostics
   --ota                 build an OTA partition table
-  -x, --extract-app     extract the micropython .app-bin
+  -x, --extract-app     extract the .app-bin from firmware
   -f FLASH_SIZE, --flash-size FLASH_SIZE
                         size of flash for new partition table
   -a APP_SIZE, --app-size APP_SIZE
@@ -66,6 +80,9 @@ usage: mp-image-tool-esp32.py [-h] [-q] [-n] [-d] [-x] [-f FLASH_SIZE] [-a APP_S
   -r RESIZE, --resize RESIZE
                         resize specific partitions by name/label, eg. --resize
                         factory=0x2M,vfs=0x400K
+  --erase-part ERASE_PART
+                        erase the named partition
+  --erase-fs ERASE_FS   erase first 4 blocks of the named fs partition
 ```
 
 ## Examples

@@ -114,7 +114,8 @@ def print_table(table: PartitionTable) -> None:
 # Load an image file and check the partition table
 def load_partition_table(filename: str, verbose=False) -> PartitionTable:
     if verbose:
-        print(f"{Fore.GREEN}Opening image file: {filename}...{Fore.RESET}")
+        type = "esp32 device at" if is_device(filename) else "image file"
+        print(f"{Fore.GREEN}Opening {type}: {filename}...{Fore.RESET}")
     with open_image(filename) as image:
         fin = image.file
         fin.seek(PartitionTable.PART_TABLE_OFFSET - image.offset)
