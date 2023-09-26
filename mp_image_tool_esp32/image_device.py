@@ -61,6 +61,13 @@ def write_flash(filename: str, offset: int, data: bytes) -> int:
     return len(data)
 
 
+# Write bytes to the device flash storage using esptool.py
+# Offset should be a multiple of 0x1000 (4096), the device block size
+def erase_flash_region(filename: str, offset: int, size: int = 4 * KB) -> bool:
+    shell(f"esptool.py --port {filename} erase_region {offset:#x} {size:#x}")
+    return True
+
+
 # A virtual file-like wrapper around the flash storage on an esp32 device
 class EspDeviceFileWrapper(io.RawIOBase):
     def __init__(self, name: str, mode: str = "r+b"):
