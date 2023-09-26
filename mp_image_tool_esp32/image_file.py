@@ -63,10 +63,12 @@ def open_image_file(filename: str) -> Esp32Image:
 @contextmanager
 def open_image(filename: str):
     openfun = open_image_device if is_device(filename) else open_image_file
+    image: Esp32Image | None = None
     try:
         yield (image := openfun(filename))
     finally:
-        image.file.close()
+        if image:
+            image.file.close()
 
 
 # Set the flash size in the supplied image file header
@@ -117,7 +119,7 @@ def load_partition_table(filename: str, verbose=False) -> PartitionTable:
         fin = image.file
         fin.seek(PartitionTable.PART_TABLE_OFFSET - image.offset)
         data = fin.read(PartitionTable.PART_TABLE_SIZE)
-        table = PartitionTable(image.flash_size)
+        table = PartitionTable(image.flash_size, image.chip_name)
         table.from_bytes(data)
         table.app_size = image.app_size
         if verbose:

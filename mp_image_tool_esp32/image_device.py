@@ -21,7 +21,7 @@ class Esp32Image:
     app_size: int
 
 
-debug = True
+debug = False
 
 
 # Use shell commands to run esptool.py to read and write from flash storage on
@@ -46,45 +46,49 @@ def shell(command: str) -> bytes:
 
 # Read bytes from the device flash storage using esptool.py
 # Offset should be a multiple of 0x1000 (4096), the device block size
-def read_flash(filename: str, offset: int, size: int) -> bytes:
+def read_flash(filename: str, offset: int, size: int, args="") -> bytes:
+    esptool = f"esptool.py {args} --port {filename}"
     with tempfile.NamedTemporaryFile("w+b", prefix="mp-image-tool-esp32-") as f:
-        shell(f"esptool.py --port {filename} read_flash {offset:#x} {size:#x} {f.name}")
+        shell(f"{esptool} read_flash {offset:#x} {size:#x} {f.name}")
         return Path(f.name).read_bytes()
 
 
 # Write bytes to the device flash storage using esptool.py
 # Offset should be a multiple of 0x1000 (4096), the device block size
-def write_flash(filename: str, offset: int, data: bytes) -> int:
+def write_flash(filename: str, offset: int, data: bytes, args="") -> int:
+    esptool = f"esptool.py {args} --port {filename}"
     with tempfile.NamedTemporaryFile("w+b", prefix="mp-image-tool-esp32-") as f:
         Path(f.name).write_bytes(data)
-        shell(f"esptool.py --port {filename} write_flash {offset:#x} {f.name}")
+        shell(f"{esptool} write_flash {offset:#x} {f.name}")
     return len(data)
 
 
 # Write bytes to the device flash storage using esptool.py
 # Offset should be a multiple of 0x1000 (4096), the device block size
-def erase_flash_region(filename: str, offset: int, size: int = 4 * KB) -> bool:
-    shell(f"esptool.py --port {filename} erase_region {offset:#x} {size:#x}")
+def erase_flash_region(filename: str, offset: int, size=4 * KB, args="") -> bool:
+    esptool = f"esptool.py {args} --port {filename}"
+    shell(f"{esptool} erase_region {offset:#x} {size:#x}")
     return True
 
 
 # A virtual file-like wrapper around the flash storage on an esp32 device
 class EspDeviceFileWrapper(io.RawIOBase):
-    def __init__(self, name: str, mode: str = "r+b"):
+    def __init__(self, name: str, args=""):
         self.port = name
+        self.args = args
         self.pos = 0
 
     def read(self, nbytes: int = 0x1000) -> bytes:
-        return read_flash(f"{self.port}", self.pos, nbytes)
+        return read_flash(self.port, self.pos, nbytes, self.args)
 
     def readinto(self, data: bytearray | memoryview) -> int:
         mv = memoryview(data)
-        b = read_flash(f"{self.port}", self.pos, len(data))
+        b = read_flash(self.port, self.pos, len(data), self.args)
         mv[: len(b)] = b
         return len(b)
 
     def write(self, data: bytes) -> int:
-        return write_flash(f"{self.port}", self.pos, data)
+        return write_flash(self.port, self.pos, data, self.args)
 
     def seek(self, pos: int, whence: int = 0):
         self.pos = [0, self.pos, 0][whence] + pos
@@ -108,5 +112,5 @@ def open_image_device(filename: str) -> Esp32Image:
     flash_size = int(match.group(1)) * MB if match else 0
     app_size = 0  # Unknown app size
     offset = 0  # No offset required for dev files
-    f = io.BufferedReader(EspDeviceFileWrapper(filename), 0x1000)
+    f = io.BufferedReader(EspDeviceFileWrapper(filename, f"--chip {chip_name}"), 0x1000)
     return Esp32Image(f, chip_name, flash_size, offset, app_size)
