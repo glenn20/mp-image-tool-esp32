@@ -11,6 +11,7 @@ import os
 from colorama import init as colorama_init
 
 from . import image_file
+from .image_device import erase_flash_region
 from .partition_table import PartError, PartitionTable
 
 MB = 0x100_000  # 1 Megabyte
@@ -101,15 +102,17 @@ parser = argparse.ArgumentParser()
 parser.add_argument("filename", help="the esp32 image file name")
 parser.add_argument("-q", "--quiet", help="mute program output", action="store_true")
 parser.add_argument("-n", "--dummy", help="no output file", action="store_true")
-parser.add_argument(
-    "-d", "--debug", help="print additional diagnostics", action="store_true"
-)
+parser.add_argument("-d", "--debug", help="print additional info", action="store_true")
 parser.add_argument("--ota", help="build an OTA partition table", action="store_true")
-parser.add_argument(
-    "-x", "--extract-app", help="extract the micropython .app-bin", action="store_true"
-)
 parser.add_argument("-f", "--flash-size", help="size of flash for new partition table")
 parser.add_argument("-a", "--app-size", help="size of factory and ota app partitions")
+parser.add_argument("--erase-part", help="erase the named partition")
+parser.add_argument(
+    "--erase-first-block", help="erase first block of the named partition"
+)
+parser.add_argument(
+    "-x", "--extract-app", help="extract .app-bin from firmware", action="store_true"
+)
 parser.add_argument(
     "-r",
     "--resize",
@@ -123,6 +126,9 @@ def main() -> int:
     filename: str = os.path.basename(input)
     verbose = not args.quiet
     extension = ""
+    if args.debug:
+        global device_debug
+        device_debug = True
 
     try:
         table = image_file.load_partition_table(input, verbose)
@@ -142,7 +148,8 @@ def main() -> int:
             app_part_size = numeric_arg(args.app_size)
             table = new_ota_table(table, app_part_size)
             extension += "-OTA"
-        elif args.app_size:
+
+        if args.app_size:
             app_part_size = numeric_arg(args.app_size)
             app_parts = filter(lambda p: p.type == 0, table)
             for p in app_parts:
@@ -155,11 +162,28 @@ def main() -> int:
                 table.resize_part(part_name, numeric_arg(size))
             extension += f"-{args.resize}"
 
+        if args.erase_part:
+            if not image_file.is_device(input):
+                raise ValueError("--erase-region requires an esp32 device")
+            part = table.by_name(args.erase_part)
+            if not part:
+                raise ValueError(f'partition "{args.erase_part}" not found.')
+            erase_flash_region(input, part.offset, part.size)
+
+        if args.erase_first_block:
+            if not image_file.is_device(input):
+                raise ValueError("--erase-first-block requires an esp32 device")
+            part = table.by_name(args.erase_first_block)
+            if part is None:
+                raise ValueError(f'partition "{args.erase_first_block}" not found.')
+            erase_flash_region(input, part.offset, 1 * B)
+
         if not args.dummy and extension:
             name, suffix = filename.rsplit(".", 1)
             output = f"{name}{extension}.{suffix}"
             image_file.copy_with_new_table(input, output, table, verbose)
-    except PartError as err:
+
+    except (PartError, ValueError) as err:
         if args.debug:
             raise err
         print(err)
