@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import io
 import math
 from contextlib import contextmanager
-from dataclasses import dataclass
 
 from colorama import Fore
 
-from .image_device import open_image_device
+from .image_device import Esp32Image, open_image_device
 from .partition_table import PartitionTable
 
 MB = 0x100_000  # 1 megabyte
@@ -34,6 +32,10 @@ CHIP_IDS = {
 }
 
 
+def is_device(filename: str) -> bool:
+    return filename.startswith("/dev/") or filename.startswith("COM")
+
+
 # Get the chip type name, flash size and image file offset from the image file
 # header:
 # - chip_type: "esp32", "esp32s2", "esp32s3", "esp32c2" or "esp32c6"
@@ -41,7 +43,7 @@ CHIP_IDS = {
 # - offset:
 #   - 0x1000 (if esp32 or esp32s2)
 #   - 0 (if esp32s3 or esp32c2)
-def open_image_file(filename: str) -> tuple[io.IOBase, str, int, int, int]:
+def open_image_file(filename: str) -> Esp32Image:
     f = open(filename, "rb")
     header = f.read(HEADER_SIZE)
     if header[: len(APP_IMAGE_MAGIC)] != APP_IMAGE_MAGIC:
@@ -55,27 +57,16 @@ def open_image_file(filename: str) -> tuple[io.IOBase, str, int, int, int]:
     # Get app size from the size of the file.
     app_size = f.seek(0, 2) - PartitionTable.APP_PART_OFFSET + offset
     f.seek(0)
-    return f, chip_name, flash_size, offset, app_size
-
-
-@dataclass
-class Esp32Image:
-    chip_name: str
-    flash_size: int
-    offset: int
-    app_size: int
+    return Esp32Image(f, chip_name, flash_size, offset, app_size)
 
 
 @contextmanager
 def open_image(filename: str):
-    if filename.startswith("/dev/"):
-        f, name, size, offset, app_size = open_image_device(filename)
-    else:
-        f, name, size, offset, app_size = open_image_file(filename)
+    openfun = open_image_device if is_device(filename) else open_image_file
     try:
-        yield f, Esp32Image(name, size, offset, app_size)
+        yield (image := openfun(filename))
     finally:
-        f.close()
+        image.file.close()
 
 
 # Set the flash size in the supplied image file header
@@ -122,7 +113,8 @@ def print_table(table: PartitionTable) -> None:
 def load_partition_table(filename: str, verbose=False) -> PartitionTable:
     if verbose:
         print(f"{Fore.GREEN}Opening image file: {filename}...{Fore.RESET}")
-    with open_image(filename) as (fin, image):
+    with open_image(filename) as image:
+        fin = image.file
         fin.seek(PartitionTable.PART_TABLE_OFFSET - image.offset)
         data = fin.read(PartitionTable.PART_TABLE_SIZE)
         table = PartitionTable(image.flash_size)
@@ -144,7 +136,8 @@ def save_app_image(
 ) -> int:
     if verbose:
         print(f"Writing micropython app image file: {output}...")
-    with open_image(input) as (fin, image), open(output, "wb") as fout:
+    with open_image(input) as image, open(output, "wb") as fout:
+        fin = image.file
         fin.seek(table.app_part.offset - image.offset)
         fout.write(fin.read())
         return fout.tell()
@@ -156,7 +149,8 @@ def copy_with_new_table(
     if verbose:
         print(f"{Fore.GREEN}Writing output file: {output}...{Fore.RESET}")
         print_table(table)
-    with open_image(input) as (fin, image), open(output, "wb") as fout:
+    with open_image(input) as image, open(output, "wb") as fout:
+        fin = image.file
         header = bytearray(fin.read(HEADER_SIZE))
         # Update the flash size in the image file header
         set_header_flash_size(header, table.flash_size)

@@ -1,19 +1,39 @@
+# MIT License: Copyright (c) 2023 @glenn20
+
 import io
 import re
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 
 MB = 0x100_000  # 1 megabyte
 KB = 0x400  # 1 kilobyte
 
 
+@dataclass
+class Esp32Image:
+    file: io.IOBase
+    chip_name: str
+    flash_size: int
+    offset: int
+    app_size: int
+
+
+debug = True
+
+
 # Use shell commands to run esptool.py to read and write from flash storage on
 # esp32 devices.
 def shell(command: str) -> bytes:
     try:
+        if debug:
+            print("$", command)
         result = subprocess.run(command, capture_output=True, check=True, shell=True)
+        if debug:
+            print(result.stdout.decode())
+            print(result.stderr.decode())
     except subprocess.CalledProcessError as e:
         print(f"Error: {e.cmd} returns error {e.returncode}.")
         if e.stderr:
@@ -26,18 +46,18 @@ def shell(command: str) -> bytes:
 
 # Read bytes from the device flash storage using esptool.py
 # Offset should be a multiple of 0x1000 (4096), the device block size
-def read_flash(args: str, offset: int, size: int) -> bytes:
+def read_flash(filename: str, offset: int, size: int) -> bytes:
     with tempfile.NamedTemporaryFile("w+b", prefix="mp-image-tool-esp32-") as f:
-        shell(f"esptool.py {args} read_flash {offset} {size} {f.name}")
+        shell(f"esptool.py --port {filename} read_flash {offset:#x} {size:#x} {f.name}")
         return Path(f.name).read_bytes()
 
 
 # Write bytes to the device flash storage using esptool.py
 # Offset should be a multiple of 0x1000 (4096), the device block size
-def write_flash(args: str, offset: int, data: bytes) -> int:
+def write_flash(filename: str, offset: int, data: bytes) -> int:
     with tempfile.NamedTemporaryFile("w+b", prefix="mp-image-tool-esp32-") as f:
         Path(f.name).write_bytes(data)
-        shell(f"esptool.py {args} write_flash {offset} {f.name}")
+        shell(f"esptool.py --port {filename} write_flash {offset:#x} {f.name}")
     return len(data)
 
 
@@ -48,16 +68,16 @@ class EspDeviceFileWrapper(io.RawIOBase):
         self.pos = 0
 
     def read(self, nbytes: int = 0x1000) -> bytes:
-        return read_flash(f"--port {self.port}", self.pos, nbytes)
+        return read_flash(f"{self.port}", self.pos, nbytes)
 
     def readinto(self, data: bytearray | memoryview) -> int:
         mv = memoryview(data)
-        b = read_flash(f"--port {self.port}", self.pos, len(data))
+        b = read_flash(f"{self.port}", self.pos, len(data))
         mv[: len(b)] = b
         return len(b)
 
     def write(self, data: bytes) -> int:
-        return write_flash(f"--port {self.port}", self.pos, data)
+        return write_flash(f"{self.port}", self.pos, data)
 
     def seek(self, pos: int, whence: int = 0):
         self.pos = [0, self.pos, 0][whence] + pos
@@ -73,7 +93,7 @@ class EspDeviceFileWrapper(io.RawIOBase):
         return True
 
 
-def open_image_device(filename: str) -> tuple[io.IOBase, str, int, int, int]:
+def open_image_device(filename: str) -> Esp32Image:
     output = shell(f"esptool.py --port {filename} flash_id").decode()
     match = re.search(r"^Detecting chip type[. ]*(ESP.*)$", output, re.MULTILINE)
     chip_name: str = match.group(1).lower().replace("_", "") if match else ""
@@ -82,4 +102,4 @@ def open_image_device(filename: str) -> tuple[io.IOBase, str, int, int, int]:
     app_size = 0  # Unknown app size
     offset = 0  # No offset required for dev files
     f = io.BufferedReader(EspDeviceFileWrapper(filename), 0x1000)
-    return f, chip_name, flash_size, offset, app_size
+    return Esp32Image(f, chip_name, flash_size, offset, app_size)
