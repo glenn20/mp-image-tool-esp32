@@ -42,7 +42,7 @@ class PartError(Exception):
     "Raised if an error occurs while reading or building a PartitionTable."
 
     def __init__(self, msg: str = "Error in partition table."):
-        super().__init__(f"\x1b[31mPartition Error: {msg}\x1b[0m")
+        super().__init__(f"Partition Error: {msg}")
 
 
 PartTuple = NamedTuple(
@@ -95,8 +95,9 @@ class PartitionTable(list[Part]):
     APP_PART_OFFSET = APP_PART_OFFSET  # type: ignore
     OTADATA_SIZE = OTADATA_SIZE
 
-    def __init__(self, flash_size: int = 0):
+    def __init__(self, flash_size: int = 0, chip_name: str = ""):
         self.flash_size = flash_size
+        self.chip_name = chip_name
         self.app_size = 0
         self.offset = 0
 

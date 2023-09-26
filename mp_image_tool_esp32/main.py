@@ -8,9 +8,10 @@ import argparse
 import copy
 import os
 
+from colorama import Fore
 from colorama import init as colorama_init
 
-from . import image_file
+from . import image_device, image_file
 from .image_device import erase_flash_region
 from .partition_table import PartError, PartitionTable
 
@@ -107,9 +108,7 @@ parser.add_argument("--ota", help="build an OTA partition table", action="store_
 parser.add_argument("-f", "--flash-size", help="size of flash for new partition table")
 parser.add_argument("-a", "--app-size", help="size of factory and ota app partitions")
 parser.add_argument("--erase-part", help="erase the named partition")
-parser.add_argument(
-    "--erase-first-block", help="erase first block of the named partition"
-)
+parser.add_argument("--erase-fs", help="erase first 4 blocks of the named fs partition")
 parser.add_argument(
     "-x", "--extract-app", help="extract .app-bin from firmware", action="store_true"
 )
@@ -122,13 +121,11 @@ parser.add_argument(
 
 def main() -> int:
     args = parser.parse_args()
+    image_device.debug = args.debug
     input: str = args.filename
     filename: str = os.path.basename(input)
     verbose = not args.quiet
     extension = ""
-    if args.debug:
-        global device_debug
-        device_debug = True
 
     try:
         table = image_file.load_partition_table(input, verbose)
@@ -167,16 +164,20 @@ def main() -> int:
                 raise ValueError("--erase-region requires an esp32 device")
             part = table.by_name(args.erase_part)
             if not part:
-                raise ValueError(f'partition "{args.erase_part}" not found.')
-            erase_flash_region(input, part.offset, part.size)
+                raise ValueError(f'partition  not found"{args.erase_part}".')
+            erase_flash_region(
+                input, part.offset, part.size, f"--chip {table.chip_name}"
+            )
 
-        if args.erase_first_block:
+        if args.erase_fs:
             if not image_file.is_device(input):
-                raise ValueError("--erase-first-block requires an esp32 device")
-            part = table.by_name(args.erase_first_block)
-            if part is None:
-                raise ValueError(f'partition "{args.erase_first_block}" not found.')
-            erase_flash_region(input, part.offset, 1 * B)
+                raise ValueError("--erase-fs requires an esp32 device")
+            part = table.by_name(args.erase_fs)
+            if not part:
+                raise PartError(f'partition not found: "{args.erase_fs}".')
+            if part.label_name not in ("vfs", "ffat"):
+                raise PartError(f'partition "{args.erase_fs}" is not a fs partition.')
+            erase_flash_region(input, part.offset, 4 * B, f"--chip {table.chip_name}")
 
         if not args.dummy and extension:
             name, suffix = filename.rsplit(".", 1)
@@ -184,9 +185,9 @@ def main() -> int:
             image_file.copy_with_new_table(input, output, table, verbose)
 
     except (PartError, ValueError) as err:
+        print(f"{Fore.RED}{err}{Fore.RESET}")
         if args.debug:
             raise err
-        print(err)
         return 1
     return 0
 
