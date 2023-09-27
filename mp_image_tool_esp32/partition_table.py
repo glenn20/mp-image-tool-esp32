@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import struct
+from functools import cached_property
 from typing import NamedTuple
 
 MB = 0x100_000  # 1 megabyte
@@ -69,17 +70,17 @@ class Part(PartTuple):
         return struct.pack(PART_FMT, *self)
 
     # Return the partition type name
-    @property
-    def label_name(self) -> str:
+    @cached_property
+    def name(self) -> str:
         return self.label.rstrip(b"\x00").decode()
 
     # Return the partition type name
-    @property
+    @cached_property
     def type_name(self) -> str:
         return TYPE_TO_NAME.get(self.type, str(self.type))
 
     # Return the partition subtype name (or the subtype number as a str)
-    @property
+    @cached_property
     def subtype_name(self) -> str:
         return SUBTYPE_TO_NAME.get((self.type, self.subtype), str(self.subtype))
 
