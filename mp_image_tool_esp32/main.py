@@ -116,13 +116,13 @@ def print_table(table: PartitionTable) -> None:
             "Micropython app fills {used:0.1f}% of {app} partition "
             "({rem} kB unused)".format(
                 used=100 * table.app_size / table.app_part.size,
-                app=table.app_part.label_name,
+                app=table.app_part.name,
                 rem=(table.app_part.size - table.app_size) // KB,
             )
         )
-    vfs = table[-1] if table[-1].label_name in ("vfs", "ffat") else None
+    vfs = table[-1] if table[-1].name in ("vfs", "ffat") else None
     if vfs:
-        print(f"Filesystem partition '{vfs.label_name}' is {vfs.size / MB:0.1f} MB.")
+        print(f"Filesystem partition '{vfs.name}' is {vfs.size / MB:0.1f} MB.")
 
 
 def print_action(*args) -> None:
@@ -212,7 +212,7 @@ def process_args(args: argparse.Namespace) -> None:
         app_part_size = numeric_arg(args.app_size)
         app_parts = filter(lambda p: p.type == 0, table)
         for p in app_parts:
-            table.resize_part(p.label_name, app_part_size)
+            table.resize_part(p.name, app_part_size)
         extension += f"-APP={args.app_size}"
 
     if args.resize:
@@ -240,7 +240,7 @@ def process_args(args: argparse.Namespace) -> None:
             # This typically includes any nvs, otadata and phy_init partitions
             parts = [p for p in table if p.offset < table.app_part.offset]
             if verbose:
-                part_names = ", ".join(f'"{p.label_name}"' for p in parts)
+                part_names = ", ".join(f'"{p.name}"' for p in parts)
                 print_action(f"Erasing partitions: {part_names}...")
             for p in parts:
                 image_device.erase_part(input, p)
@@ -265,9 +265,9 @@ def process_args(args: argparse.Namespace) -> None:
             part = table.by_name(part_name)
             if not part:
                 raise PartError(f'partition not found: "{part_name}".')
-            if part.label_name not in ("vfs", "ffat"):
+            if part.name not in ("vfs", "ffat"):
                 raise PartError(f'partition "{part_name}" is not a fs partition.')
-            print_action(f'Erasing filesystem on partition "{part.label_name}"...')
+            print_action(f'Erasing filesystem on partition "{part.name}"...')
             if not args.dummy:
                 image_device.erase_part(input, part, 4 * B)
 

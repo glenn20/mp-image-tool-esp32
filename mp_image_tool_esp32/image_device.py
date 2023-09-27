@@ -49,6 +49,7 @@ def shell(command: str) -> bytes:
         sys.exit(e.returncode)
     return result.stdout
 
+
 # Convenience function for calling an esptool.py command.
 def esptool(port: str, command: str) -> bytes:
     return shell(f"esptool.py {esptool_args} --port {port} {command}")
@@ -141,7 +142,7 @@ def read_part(device: str, part: Part, output: str) -> int:
 def write_part(device: str, part: Part, input: str) -> int:
     if part.size < os.path.getsize(input):
         raise ValueError(
-            f"Partition {part.label_name} ({part.size} bytes)"
+            f"Partition {part.name} ({part.size} bytes)"
             f" is too small for data ({os.path.getsize(input)} bytes)."
         )
     esptool(device, f"write_flash {part.offset:#x} {input}")

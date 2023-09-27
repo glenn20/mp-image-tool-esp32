@@ -81,7 +81,7 @@ class Part(PartTuple):
 
     # Return the partition type name
     @cached_property
-    def label_name(self) -> str:
+    def name(self) -> str:
         return self.label.rstrip(b"\x00").decode()
 
     # Return the partition type name
@@ -125,7 +125,7 @@ class PartitionTable(list[Part]):
                 else f"({p.size / MB:0.1f} MB)"
             )
             print(
-                f"  {p.label_name:16s} {p.type_name:8s} {p.subtype_name:8}"
+                f"  {p.name:16s} {p.type_name:8s} {p.subtype_name:8}"
                 f" {p.offset:#10x} {p.size:#10x} {total:>#10x} {p.flags:#4x}"
                 f" {size_str:>10s}"
             )
@@ -228,7 +228,7 @@ class PartitionTable(list[Part]):
             self.check()
 
     def by_name(self, name: str) -> Part | None:
-        return next(filter(lambda p: p.label_name == name, self), None)
+        return next(filter(lambda p: p.name == name, self), None)
 
     # Change size of partition (and adjusting offsets of following parts if necessary)
     def resize_part(self, name: str, new_size: int) -> None:
@@ -238,7 +238,7 @@ class PartitionTable(list[Part]):
         for p in self:
             if found and p.offset != offset:  # Adjust offset of partitions
                 p = p._replace(offset=offset)
-            if p.label_name == name:  # Change size of partition
+            if p.name == name:  # Change size of partition
                 found = True
                 p = p._replace(size=new_size)
             offset = p.offset + p.size
@@ -260,15 +260,15 @@ class PartitionTable(list[Part]):
         offset = self.FIRST_PART_OFFSET
         names: set[str] = set()
         for p in self:
-            if p.label_name in names:
-                raise PartError(f'Partition name, "{p.label_name}" is repeated.')
-            names.add(p.label_name)
+            if p.name in names:
+                raise PartError(f'Partition name, "{p.name}" is repeated.')
+            names.add(p.name)
             if p.offset < offset:
                 raise PartError(
-                    f'Partition "{p.label_name}" overlaps with previous partition.'
+                    f'Partition "{p.name}" overlaps with previous partition.'
                 )
             if p.offset > offset:
-                print(f'Warning: Gap before partition "{p.label_name}".')
+                print(f'Warning: Gap before partition "{p.name}".')
             if p.offset % 0x1_000:
                 raise PartError(
                     f"Partition offset {p.offset:#x} is not multiple of 0x1000."
@@ -299,7 +299,7 @@ class PartitionTable(list[Part]):
             )
         if self.app_size and self.app_part.size < self.app_size:
             raise PartError(
-                f'App partition "{self.app_part.label_name}"'
+                f'App partition "{self.app_part.name}"'
                 f" is too small for micropython app ({self.app_size:#x} bytes)."
             )
 
