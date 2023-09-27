@@ -30,30 +30,36 @@ it will print the partition table of `filename`.
 
 - print a summary of the partition table on flash storage of an esp32 device
   (`mp-image-tool-esp32 /dev/ttyUSB0`)
+- update the partition table on the flash storage using `--ota`,
+  `--resize-flash` and `--app-size` options as above
+- read the contents of a partition into a file
+  (`--read-part part_name filename.bin`)
+- write the contents of a file into a partition
+  (`--write-part part_name filename.bin`)
 - erase a partition on an esp32 device
-  (`mp-image-tool-esp32 --erase-part nvs /dev/ttyACM0`)
+  (`--erase-part nvs /dev/ttyACM0`)
   - micropython automatically re-inits nvs partitions after being erased
 - erase a filesystem on a partition on an esp32 device
-  (`mp-image-tool-esp32 --erase-fs vfs /dev/ttyACM0`)
+  (`--erase-fs vfs /dev/ttyACM0`)
   - erases the first 4 blocks of the partition - micropython will automatically
     build a fresh filesystem on the next boot.
 
-`mp-image-tool-esp32` uses the `esptool.py` program to perform the operations on
-attached esp32 devices.
+`mp-image-tool-esp32` uses the `esptool.py` program to perform
+the operations on attached esp32 devices.
 
 ## Install
 
 To use without installing:
 
 ```bash
-$ ./mp-image-tool-esp32.py ESP32_GENERIC-20230426-v1.20.0.bin
+./mp-image-tool-esp32.py ESP32_GENERIC-20230426-v1.20.0.bin
 ```
 
 To install in your python environment:
 
 ```bash
-$ python -m build
-$ pip install dist/mp_image_tool_esp32*.whl
+python -m build
+pip install dist/mp_image_tool_esp32*.whl
 ```
 
 ## Usage
@@ -80,6 +86,10 @@ usage: mp-image-tool-esp32.py [-h] [-q] [-n] [-d] [-x] [-f FLASH_SIZE] [-a APP_S
   -r RESIZE, --resize RESIZE
                         resize specific partitions by name/label, eg. --resize
                         factory=0x2M,vfs=0x400K
+  --read-part READ_PART READ_PART
+                        save a partition from an es32 device to a file
+  --write-part WRITE_PART WRITE_PART
+                        write a file into a partition on an esp32 device
   --erase-part ERASE_PART
                         erase the named partition
   --erase-fs ERASE_FS   erase first 4 blocks of the named fs partition

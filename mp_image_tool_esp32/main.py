@@ -12,7 +12,6 @@ from colorama import Fore
 from colorama import init as colorama_init
 
 from . import image_device, image_file
-from .image_device import erase_flash_region
 from .partition_table import PartError, PartitionTable
 
 MB = 0x100_000  # 1 Megabyte
@@ -40,6 +39,8 @@ ota_0     ota_0     {ota_0}
 ota_1     ota_1     {ota_1}
 vfs       fat             0
 """
+
+debug = False
 
 
 # Return the recommended OTA app part size (depends on flash_size)
@@ -97,6 +98,43 @@ def new_ota_table(
     return table
 
 
+# Provide a detailed printout of the partition table
+def print_table(table: PartitionTable) -> None:
+    colors = dict(g=Fore.GREEN, r=Fore.RED, _=Fore.RESET)
+
+    print(
+        "{g}Partition table (flash size: {r}{size}MB{g}):".format(
+            size=table.flash_size // MB, **colors
+        )
+    )
+    print(Fore.CYAN, end="")
+    table.print()
+    print(Fore.RESET, end="")
+    table.check()
+    if table.app_part:
+        print(
+            "Micropython app fills {used:0.1f}% of {app} partition "
+            "({rem} kB unused)".format(
+                used=100 * table.app_size / table.app_part.size,
+                app=table.app_part.label_name,
+                rem=(table.app_part.size - table.app_size) // KB,
+            )
+        )
+    vfs = table[-1] if table[-1].label_name in ("vfs", "ffat") else None
+    if vfs:
+        print(f'Filesystem partition "{vfs.label_name}" is {vfs.size / MB:0.1f} MB.')
+
+
+def print_action(*args) -> None:
+    print(Fore.GREEN, end="")
+    print(*args, Fore.RESET)
+
+
+def print_error(*args) -> None:
+    print(Fore.RED, end="")
+    print(*args, Fore.RESET)
+
+
 colorama_init()
 
 parser = argparse.ArgumentParser()
@@ -107,8 +145,12 @@ parser.add_argument("-d", "--debug", help="print additional info", action="store
 parser.add_argument("--ota", help="build an OTA partition table", action="store_true")
 parser.add_argument("-f", "--flash-size", help="size of flash for new partition table")
 parser.add_argument("-a", "--app-size", help="size of factory and ota app partitions")
-parser.add_argument("--erase-part", help="erase the named partition")
 parser.add_argument("--erase-fs", help="erase first 4 blocks of the named fs partition")
+parser.add_argument("--erase-part", help="erase the named partition on an esp32 device")
+parser.add_argument("--write-part", help="write a file into a partition", nargs=2)
+parser.add_argument(
+    "--read-part", help="save a partition from an esp32 device to a file", nargs=2
+)
 parser.add_argument(
     "-x", "--extract-app", help="extract .app-bin from firmware", action="store_true"
 )
@@ -119,77 +161,137 @@ parser.add_argument(
 )
 
 
+def process_args(args: argparse.Namespace) -> None:
+    image_device.debug = args.debug  # print esptool.py commands and output
+    input: str = args.filename  # the input firmware filename
+    verbose = not args.quiet  # verbose is True by default
+    extension = ""  # Each operarion that changes table adds identifier to extension
+
+    # Open the input firmware file or esp32 device
+    if verbose:
+        desc = "esp32 device at" if image_file.is_device(input) else "image file"
+        print_action(f"Opening {desc}: {input}...")
+    table = image_file.load_partition_table(input)
+    if verbose:
+        print(f"Chip type: {table.chip_name}")
+        print(f"Flash size: {table.flash_size // MB}MB")
+        print(
+            f"Micropython App size: {table.app_size:#x} bytes "
+            f"({table.app_size // KB:,d} KB)"
+        )
+        print_table(table)
+
+    # Extract the micropython app image from the firmware file
+    if args.extract_app:
+        basename: str = os.path.basename(input)
+        output = basename[:-4] if basename.endswith(".bin") else basename
+        output += ".app-bin"
+        if verbose:
+            print_action(f"Writing micropython app image file: {output}...")
+        image_file.save_app_image(input, output, table)
+
+    # Commands to modify the partition table
+    if args.flash_size:
+        flash_size = numeric_arg(args.flash_size)
+        if flash_size and flash_size != table.flash_size:
+            table.resize_flash(flash_size)
+        extension += f"-{flash_size // MB}MB"
+
+    if args.ota:
+        app_part_size = numeric_arg(args.app_size)
+        table = new_ota_table(table, app_part_size)
+        extension += "-OTA"
+
+    if args.app_size:
+        app_part_size = numeric_arg(args.app_size)
+        app_parts = filter(lambda p: p.type == 0, table)
+        for p in app_parts:
+            table.resize_part(p.label_name, app_part_size)
+        extension += f"-APP={args.app_size}"
+
+    if args.resize:
+        for spec in args.resize.split(","):
+            part_name, size = spec.split("=", 1)
+            table.resize_part(part_name, numeric_arg(size))
+        extension += f"-{args.resize}"
+
+    # Write the modified partition table to a new file or flash storage on device
+    if not args.dummy and extension:
+        if not image_file.is_device(input):
+            basename: str = os.path.basename(input)
+            part_name, suffix = basename.rsplit(".", 1)
+            output = f"{part_name}{extension}.{suffix}"
+            if verbose:
+                print_action(f"Writing output file: {output}...")
+                print_table(table)
+            image_file.copy_with_new_table(input, output, table)
+        else:
+            if verbose:
+                print_action(f"Writing new table to flash storage at {input}...")
+                print_table(table)
+            image_device.write_table(input, table)
+            # Erase all the partitions before the first app partition
+            # This typically includes any nvs, otadata and phy_init partitions
+            parts = [p for p in table if p.offset < table.app_part.offset]
+            if verbose:
+                part_names = ", ".join(f'"{p.label_name}"' for p in parts)
+                print_action(f"Erasing partitions: {part_names}...")
+            for p in parts:
+                image_device.erase_part(input, p)
+
+    # For erasing flash storage partitions
+    if args.erase_part:
+        part_names: str = args.erase_part
+        if not image_file.is_device(input):
+            raise ValueError("--erase-region requires an esp32 device")
+        for part_name in part_names.split(","):
+            part = table.by_name(part_name)
+            if not part:
+                raise ValueError(f'partition not found "{part_name}".')
+            if not args.dummy:
+                image_device.erase_part(input, part)
+
+    if args.erase_fs:
+        part_names: str = args.erase_fs
+        if not image_file.is_device(input):
+            raise ValueError("--erase-fs requires an esp32 device")
+        for part_name in part_names.split(","):
+            part = table.by_name(part_name)
+            if not part:
+                raise PartError(f'partition not found: "{part_name}".')
+            if part.label_name not in ("vfs", "ffat"):
+                raise PartError(f'partition "{part_name}" is not a fs partition.')
+            print_action(f'Erasing filesystem on partition "{part.label_name}"...')
+            if not args.dummy:
+                image_device.erase_part(input, part, 4 * B)
+
+    if args.read_part:
+        part_name, filename = args.read_part
+        if (part := table.by_name(part_name)) is None:
+            raise PartError(f"No partition '{part_name}' found.")
+        if verbose:
+            print_action(f"Saving partition '{part_name}' into '{filename}'...")
+        n = image_device.read_part(input, part, filename)
+        if verbose:
+            print(f"Wrote {n:#x} bytes to '{filename}'.")
+
+    if args.write_part:
+        part_name, filename = args.write_part
+        if (part := table.by_name(part_name)) is None:
+            raise PartError(f"No partition '{part_name}' found.")
+        if verbose:
+            print_action(f"Writing partition '{part_name}' from '{filename}'...")
+        n = image_device.write_part(input, part, filename)
+        if verbose:
+            print(f"Wrote {n:#x} bytes to '{part_name}'.")
+
+
 def main() -> int:
     args = parser.parse_args()
-    image_device.debug = args.debug
-    input: str = args.filename
-    filename: str = os.path.basename(input)
-    verbose = not args.quiet
-    extension = ""
-
     try:
-        table = image_file.load_partition_table(input, verbose)
-
-        if args.extract_app:
-            output = filename[:-4] if filename.endswith(".bin") else filename
-            output += ".app-bin"
-            image_file.save_app_image(input, output, table, verbose)
-
-        if args.flash_size:
-            flash_size = numeric_arg(args.flash_size)
-            if flash_size and flash_size != table.flash_size:
-                table.resize_flash(flash_size)
-            extension += f"-{flash_size // MB}MB"
-
-        if args.ota:
-            app_part_size = numeric_arg(args.app_size)
-            table = new_ota_table(table, app_part_size)
-            extension += "-OTA"
-
-        if args.app_size:
-            app_part_size = numeric_arg(args.app_size)
-            app_parts = filter(lambda p: p.type == 0, table)
-            for p in app_parts:
-                table.resize_part(p.label_name, app_part_size)
-            extension += f"-APP={args.app_size}"
-
-        if args.resize:
-            for spec in args.resize.split(","):
-                part_name, size = spec.split("=", 1)
-                table.resize_part(part_name, numeric_arg(size))
-            extension += f"-{args.resize}"
-
-        if args.erase_part:
-            if not image_file.is_device(input):
-                raise ValueError("--erase-region requires an esp32 device")
-            part = table.by_name(args.erase_part)
-            if not part:
-                raise ValueError(f'partition  not found"{args.erase_part}".')
-            erase_flash_region(
-                input, part.offset, part.size, f"--chip {table.chip_name}"
-            )
-
-        if args.erase_fs:
-            if not image_file.is_device(input):
-                raise ValueError("--erase-fs requires an esp32 device")
-            part = table.by_name(args.erase_fs)
-            if not part:
-                raise PartError(f'partition not found: "{args.erase_fs}".')
-            if part.label_name not in ("vfs", "ffat"):
-                raise PartError(f'partition "{args.erase_fs}" is not a fs partition.')
-            print(
-                f"{Fore.GREEN}Erasing filesystem on partition "
-                f'"{part.label_name}"...{Fore.RESET}'
-            )
-            erase_flash_region(input, part.offset, 4 * B, f"--chip {table.chip_name}")
-
-        if not args.dummy and extension:
-            name, suffix = filename.rsplit(".", 1)
-            output = f"{name}{extension}.{suffix}"
-            image_file.copy_with_new_table(input, output, table, verbose)
-
+        process_args(args)
     except (PartError, ValueError) as err:
-        print(f"{Fore.RED}{err}{Fore.RESET}")
+        print_error(err)
         if args.debug:
             raise err
         return 1

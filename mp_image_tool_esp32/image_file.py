@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import math
 from contextlib import contextmanager
-
-from colorama import Fore
+from typing import Generator
 
 from .image_device import Esp32Image, open_image_device
 from .partition_table import PartitionTable
@@ -61,7 +60,7 @@ def open_image_file(filename: str) -> Esp32Image:
 
 
 @contextmanager
-def open_image(filename: str):
+def open_image(filename: str) -> Generator[Esp32Image, None, None]:
     openfun = open_image_device if is_device(filename) else open_image_file
     image: Esp32Image | None = None
     try:
@@ -84,38 +83,8 @@ def set_header_flash_size(header: bytearray | memoryview, flash_size: int = 0) -
     )
 
 
-# Provide a detailed printout of the partition table
-def print_table(table: PartitionTable) -> None:
-    colors = dict(g=Fore.GREEN, r=Fore.RED, _=Fore.RESET)
-
-    print(
-        "{g}Partition table (flash size: {r}{size}MB{g}):".format(
-            size=table.flash_size // MB, **colors
-        )
-    )
-    print(Fore.CYAN, end="")
-    table.print()
-    print(Fore.RESET, end="")
-    table.check()
-    if table.app_part:
-        print(
-            "Micropython app fills {used:0.1f}% of {app} partition "
-            "({rem} kB unused)".format(
-                used=100 * table.app_size / table.app_part.size,
-                app=table.app_part.label_name,
-                rem=(table.app_part.size - table.app_size) // KB,
-            )
-        )
-    vfs = table[-1] if table[-1].label_name in ("vfs", "ffat") else None
-    if vfs:
-        print(f'Filesystem partition "{vfs.label_name}" is {vfs.size / MB:0.1f} MB.')
-
-
 # Load an image file and check the partition table
-def load_partition_table(filename: str, verbose=False) -> PartitionTable:
-    if verbose:
-        type = "esp32 device at" if is_device(filename) else "image file"
-        print(f"{Fore.GREEN}Opening {type}: {filename}...{Fore.RESET}")
+def load_partition_table(filename: str) -> PartitionTable:
     with open_image(filename) as image:
         fin = image.file
         fin.seek(PartitionTable.PART_TABLE_OFFSET - image.offset)
@@ -123,22 +92,10 @@ def load_partition_table(filename: str, verbose=False) -> PartitionTable:
         table = PartitionTable(image.flash_size, image.chip_name)
         table.from_bytes(data)
         table.app_size = image.app_size
-        if verbose:
-            print(f"Chip type: {image.chip_name}")
-            print(f"Flash size: {image.flash_size // MB}MB")
-            print(
-                f"Micropython App size: {table.app_size:#x} bytes "
-                f"({table.app_size // KB:,d} KB)"
-            )
-            print_table(table)
     return table
 
 
-def save_app_image(
-    input: str, output: str, table: PartitionTable, verbose=False
-) -> int:
-    if verbose:
-        print(f"Writing micropython app image file: {output}...")
+def save_app_image(input: str, output: str, table: PartitionTable) -> int:
     with open_image(input) as image, open(output, "wb") as fout:
         fin = image.file
         fin.seek(table.app_part.offset - image.offset)
@@ -146,12 +103,7 @@ def save_app_image(
         return fout.tell()
 
 
-def copy_with_new_table(
-    input: str, output: str, table: PartitionTable, verbose=False
-) -> int:
-    if verbose:
-        print(f"{Fore.GREEN}Writing output file: {output}...{Fore.RESET}")
-        print_table(table)
+def copy_with_new_table(input: str, output: str, table: PartitionTable) -> int:
     with open_image(input) as image, open(output, "wb") as fout:
         fin = image.file
         header = bytearray(fin.read(HEADER_SIZE))
