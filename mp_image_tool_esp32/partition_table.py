@@ -48,18 +48,14 @@ class PartError(Exception):
         super().__init__(f"Partition Error: {msg}")
 
 
-PartTuple = NamedTuple(
-    "Part",
-    [
-        ("magic", bytes),
-        ("type", int),
-        ("subtype", int),
-        ("offset", int),
-        ("size", int),
-        ("label", bytes),
-        ("flags", int),
-    ],
-)
+class PartTuple(NamedTuple):
+    magic: bytes
+    type: int
+    subtype: int
+    offset: int
+    size: int
+    label: bytes
+    flags: int
 
 
 # My convenient form of itertools.takewhile()
