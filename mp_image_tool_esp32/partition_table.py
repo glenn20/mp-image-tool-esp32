@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import hashlib
 import struct
 from functools import cached_property
@@ -30,6 +31,7 @@ SUBTYPES: dict[str, tuple[int, int]] = {
     "fat": (1, 129),
 } | {f"ota_{i}": (0, i + 16) for i in range(16)}
 TYPE_TO_NAME = {0: "app", 1: "data"}
+NAME_TO_TYPE = {type: name for name, type in TYPE_TO_NAME.items()}
 SUBTYPE_TO_NAME = {types: name for name, types in SUBTYPES.items()}
 
 # Partition table offsets and sizes
@@ -60,6 +62,14 @@ PartTuple = NamedTuple(
 )
 
 
+# My convenient form of itertools.takewhile()
+def while_true(iterable):
+    for x in iterable:
+        if not x:
+            break
+        yield x
+
+
 class Part(PartTuple):
     @staticmethod
     def from_bytes(data: bytes) -> Part | None:
@@ -71,7 +81,7 @@ class Part(PartTuple):
 
     # Return the partition type name
     @cached_property
-    def name(self) -> str:
+    def label_name(self) -> str:
         return self.label.rstrip(b"\x00").decode()
 
     # Return the partition type name
@@ -122,10 +132,13 @@ class PartitionTable(list[Part]):
 
     def from_bytes(self, data: bytes) -> PartitionTable:
         # Build the partition table from the records in "data"
-        for i in range(0, min(len(data), PART_TABLE_SIZE) - PART_LEN, PART_LEN):
-            if not (p := Part.from_bytes(data[i : i + PART_LEN])):
-                break
-            self.append(p)
+        size = min(len(data), PART_TABLE_SIZE) - PART_LEN
+        self.extend(
+            while_true(
+                Part.from_bytes(data[i : i + PART_LEN])
+                for i in range(0, size, PART_LEN)
+            )
+        )
         if len(self) == 0:
             raise PartError("No partition table found.")
         n = len(self) * PART_LEN
@@ -162,6 +175,15 @@ class PartitionTable(list[Part]):
         assert len(data) == self.PART_TABLE_SIZE
         return data
 
+    def from_csv(self, filename: str) -> PartitionTable:
+        self.clear()
+        with open(filename, newline="") as f:
+            reader = csv.reader((l for l in f if l[0] != "#"), skipinitialspace=True)
+            for name, type, subtype, offset, size, flags in reader:
+                self.add_part(name, subtype, int(size, 0), int(offset, 0))
+        self.check()
+        return self
+
     # Find the first app partition offset.
     @property
     def app_part(self) -> Part:
@@ -180,14 +202,16 @@ class PartitionTable(list[Part]):
         name: str,
         subtype_name: str,
         size: int,  # If size==0, use all space left in the flash
+        offset: int = 0,
         flags: int = 0,
     ) -> None:
         if not self.offset:
             self.offset = self.FIRST_PART_OFFSET
-        if self.offset + size > self.flash_size:
+        offset = offset or self.offset
+        if offset + size > self.flash_size:
             self.print()
             raise PartError(f"No room on flash for partition {name} ({size:#x} bytes).")
-        size = size or (self.flash_size - self.offset)
+        size = size or (self.flash_size - offset)
         type, subtype = SUBTYPES[subtype_name]
         self.append(
             Part(PART_MAGIC, type, subtype, self.offset, size, name.encode(), flags)

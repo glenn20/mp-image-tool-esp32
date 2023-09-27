@@ -122,7 +122,7 @@ def print_table(table: PartitionTable) -> None:
         )
     vfs = table[-1] if table[-1].label_name in ("vfs", "ffat") else None
     if vfs:
-        print(f'Filesystem partition "{vfs.label_name}" is {vfs.size / MB:0.1f} MB.')
+        print(f"Filesystem partition '{vfs.label_name}' is {vfs.size / MB:0.1f} MB.")
 
 
 def print_action(*args) -> None:
@@ -146,6 +146,7 @@ parser.add_argument("--ota", help="build an OTA partition table", action="store_
 parser.add_argument("-f", "--flash-size", help="size of flash for new partition table")
 parser.add_argument("-a", "--app-size", help="size of factory and ota app partitions")
 parser.add_argument("--erase-fs", help="erase first 4 blocks of the named fs partition")
+parser.add_argument("--from-csv", help="load new partition table from CSV file")
 parser.add_argument("--erase-part", help="erase the named partition on an esp32 device")
 parser.add_argument("--write-part", help="write a file into a partition", nargs=2)
 parser.add_argument(
@@ -201,6 +202,11 @@ def process_args(args: argparse.Namespace) -> None:
         app_part_size = numeric_arg(args.app_size)
         table = new_ota_table(table, app_part_size)
         extension += "-OTA"
+
+    if args.from_csv:
+        filename = args.from_csv
+        table.from_csv(filename)
+        extension += "-CSV"
 
     if args.app_size:
         app_part_size = numeric_arg(args.app_size)
