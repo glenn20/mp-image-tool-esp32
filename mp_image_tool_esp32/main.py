@@ -271,24 +271,26 @@ def process_args() -> None:
                 image_device.erase_part(input, part, 4 * B)
 
     if args.read_part:
-        part_name, filename = args.read_part
-        if (part := table.by_name(part_name)) is None:
-            raise PartError(f"No partition '{part_name}' found.")
-        if verbose:
-            print_action(f"Saving partition '{part_name}' into '{filename}'...")
-        n = image_device.read_part(input, part, filename)
-        if verbose:
-            print(f"Wrote {n:#x} bytes to '{filename}'.")
+        for spec in args.read_part.split(","):
+            part_name, filename = spec.split("=", 1)
+            if (part := table.by_name(part_name)) is None:
+                raise PartError(f"No partition '{part_name}' found.")
+            if verbose:
+                print_action(f"Saving partition '{part_name}' into '{filename}'...")
+            n = image_device.read_part(input, part, filename)
+            if verbose:
+                print(f"Wrote {n:#x} bytes to '{filename}'.")
 
     if args.write_part:
-        part_name, filename = args.write_part
-        if (part := table.by_name(part_name)) is None:
-            raise PartError(f"No partition '{part_name}' found.")
-        if verbose:
-            print_action(f"Writing partition '{part_name}' from '{filename}'...")
-        n = image_device.write_part(input, part, filename)
-        if verbose:
-            print(f"Wrote {n:#x} bytes to '{part_name}'.")
+        for spec in args.read_part.split(","):
+            part_name, filename = spec.split("=", 1)
+            if (part := table.by_name(part_name)) is None:
+                raise PartError(f"No partition '{part_name}' found.")
+            if verbose:
+                print_action(f"Writing partition '{part_name}' from '{filename}'...")
+            n = image_device.write_part(input, part, filename)
+            if verbose:
+                print(f"Wrote {n:#x} bytes to '{part_name}'.")
 
 
 def main() -> int:

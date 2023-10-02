@@ -174,7 +174,7 @@ class PartitionTable(list[Part]):
     def from_csv(self, filename: str) -> PartitionTable:
         self.clear()
         with open(filename, newline="") as f:
-            reader = csv.reader((l for l in f if l[0] != "#"), skipinitialspace=True)
+            reader = csv.reader((s for s in f if s[0] != "#"), skipinitialspace=True)
             for name, type, subtype, offset, size, flags in reader:
                 self.add_part(name, subtype, int(size, 0), int(offset, 0))
         self.check()

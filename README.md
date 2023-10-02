@@ -33,19 +33,20 @@ it will print the partition table of `filename`.
 - update the partition table on the flash storage using `--ota`,
   `--resize-flash` and `--app-size` options as above
 - read the contents of a partition into a file
-  (`--read-part part_name filename.bin`)
+  (`--read-part factory=factory.bin,`)
 - write the contents of a file into a partition
-  (`--write-part part_name filename.bin`)
+  (eg. `--write-part ota_0=micropython.bin`)
 - erase a partition on an esp32 device
-  (`--erase-part nvs /dev/ttyACM0`)
-  - micropython automatically re-inits nvs partitions after being erased
+  (`--erase-part nvs,otadata /dev/ttyACM0`)
+  - micropython automatically re-inits nvs and otadata partitions after being
+    erased
 - erase a filesystem on a partition on an esp32 device
   (`--erase-fs vfs /dev/ttyACM0`)
   - erases the first 4 blocks of the partition - micropython will automatically
     build a fresh filesystem on the next boot.
 
-`mp-image-tool-esp32` uses the `esptool.py` program to perform
-the operations on attached esp32 devices.
+`mp-image-tool-esp32` uses the `esptool.py` program to perform the operations on
+attached esp32 devices.
 
 ## Install
 
@@ -65,8 +66,12 @@ pip install dist/mp_image_tool_esp32*.whl
 ## Usage
 
 ```text
-usage: mp-image-tool-esp32.py [-h] [-q] [-n] [-d] [-x] [-f FLASH_SIZE] [-a APP_SIZE]
-                              [-r RESIZE]
+usage: mp-image-tool-esp32.py [-h] [-q] [-n] [-d] [-x] [-f ['SIZE']] [-a ['SIZE']]
+                              [-r ['NAME1=SIZE1[,NAME2=SIZE2]']] [--ota]
+                              [--from-csv ['FILE']] [--erase-part ['NAME1[,NAME2]']]
+                              [--erase-fs ['NAME1[,NAME2]']]
+                              [--read-part ['NAME1=FILE1[,NAME2=FILE2]']]
+                              [--write-part ['NAME1=FILE1[,NAME2=FILE2]']]
                               filename
 ```
 
@@ -76,23 +81,25 @@ usage: mp-image-tool-esp32.py [-h] [-q] [-n] [-d] [-x] [-f FLASH_SIZE] [-a APP_S
   -h, --help            show this help message and exit
   -q, --quiet           mute program output
   -n, --dummy           no output file
-  -d, --debug           print additional diagnostics
-  --ota                 build an OTA partition table
-  -x, --extract-app     extract the .app-bin from firmware
-  -f FLASH_SIZE, --flash-size FLASH_SIZE
+  -d, --debug           print additional info
+  -x, --extract-app     extract .app-bin from firmware
+  -f ['SIZE'], --flash_size ['SIZE']
                         size of flash for new partition table
-  -a APP_SIZE, --app-size APP_SIZE
+  -a ['SIZE'], --app-size ['SIZE']
                         size of factory and ota app partitions
-  -r RESIZE, --resize RESIZE
-                        resize specific partitions by name/label, eg. --resize
+  -r ['NAME1=SIZE1[,NAME2=SIZE2]'], --resize ['NAME1=SIZE1[,NAME2=SIZE2]']
+                        resize specific partitions by name, eg. --resize
                         factory=0x2M,vfs=0x400K
-  --read-part READ_PART READ_PART
-                        save a partition from an es32 device to a file
-  --write-part WRITE_PART WRITE_PART
-                        write a file into a partition on an esp32 device
-  --erase-part ERASE_PART
-                        erase the named partition
-  --erase-fs ERASE_FS   erase first 4 blocks of the named fs partition
+  --ota                 build an OTA partition table
+  --from-csv ['FILE']   load new partition table from CSV file
+  --erase-part ['NAME1[,NAME2]']
+                        erase the named partitions on device flash storage
+  --erase-fs ['NAME1[,NAME2]']
+                        erase first 4 blocks of the named fs partition
+  --read-part ['NAME1=FILE1[,NAME2=FILE2]']
+                        copy partitions to file from flash storage on device
+  --write-part ['NAME1=FILE1[,NAME2=FILE2]']
+                        write files into partitions on the device flash
 ```
 
 ## Examples
