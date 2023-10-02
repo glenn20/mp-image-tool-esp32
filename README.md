@@ -1,6 +1,6 @@
 # mp-image-tool-esp32
 
-Tool for manipulating MicroPython esp32 image files.
+Tool for manipulating MicroPython esp32 firmware image files.
 
 `mp-image-tool-esp32` copies an existing micropython esp32 firmware file, such
 as those at <https://micropython.org/download?port=esp32>, to a new file with a
@@ -53,7 +53,7 @@ attached esp32 devices.
 To use without installing:
 
 ```bash
-./mp-image-tool-esp32.py ESP32_GENERIC-20230426-v1.20.0.bin
+./mp-image-tool-esp32 ESP32_GENERIC-20230426-v1.20.0.bin
 ```
 
 To install in your python environment:
@@ -66,13 +66,13 @@ pip install dist/mp_image_tool_esp32*.whl
 ## Usage
 
 ```text
-usage: mp-image-tool-esp32.py [-h] [-q] [-n] [-d] [-x] [-f ['SIZE']] [-a ['SIZE']]
-                              [-r ['NAME1=SIZE1[,NAME2=SIZE2]']] [--ota]
-                              [--from-csv ['FILE']] [--erase-part ['NAME1[,NAME2]']]
-                              [--erase-fs ['NAME1[,NAME2]']]
-                              [--read-part ['NAME1=FILE1[,NAME2=FILE2]']]
-                              [--write-part ['NAME1=FILE1[,NAME2=FILE2]']]
-                              filename
+usage: mp-image-tool-esp32 [-h] [-q] [-n] [-d] [-x] [-f ['SIZE']] [-a ['SIZE']]
+                           [-r ['NAME1=SIZE1[,NAME2=SIZE2]']] [--ota]
+                           [--from-csv ['FILE']] [--erase-part ['NAME1[,NAME2]']]
+                           [--erase-fs ['NAME1[,NAME2]']]
+                           [--read-part ['NAME1=FILE1[,NAME2=FILE2]']]
+                           [--write-part ['NAME1=FILE1[,NAME2=FILE2]']]
+                           filename
 ```
 
 ### options
@@ -107,7 +107,7 @@ usage: mp-image-tool-esp32.py [-h] [-q] [-n] [-d] [-x] [-f ['SIZE']] [-a ['SIZE'
 Display the partition table..
 
 ```bash
-$ ./mp-image-tool-esp32.py ESP32_GENERIC-20230426-v1.20.0.bin
+$ mp-image-tool-esp32 ESP32_GENERIC-20230426-v1.20.0.bin
 Opening image file: ESP32_GENERIC-20230426-v1.20.0.bin...
 Chip type: esp32
 Flash size: 4MB
@@ -125,7 +125,7 @@ Filesystem partition "vfs" is 2.0 MB.
 Resize the flash size:
 
 ```bash
-$ ./mp-image-tool-esp32.py ESP32_GENERIC-20230426-v1.20.0.bin -f 8M
+$ mp-image-tool-esp32 ESP32_GENERIC-20230426-v1.20.0.bin -f 8M
 Opening image file: ESP32_GENERIC-20230426-v1.20.0.bin...
 Chip type: esp32
 Flash size: 4MB
@@ -152,7 +152,7 @@ Filesystem partition "vfs" is 6.0 MB.
 Convert a generic image to an OTA-capable firmware image:
 
 ```bash
-$ ./mp-image-tool-esp32.py ESP32_GENERIC-20230426-v1.20.0.bin --ota
+$ mp-image-tool-esp32 ESP32_GENERIC-20230426-v1.20.0.bin --ota
 Opening image file: ESP32_GENERIC-20230426-v1.20.0.bin...
 Chip type: esp32
 Flash size: 4MB
@@ -180,7 +180,7 @@ Filesystem partition "vfs" is 0.9 MB.
 Resize all the **app** partitions (*factory* or *ota_?*):
 
 ```bash
-$ ./mp-image-tool-esp32.py ESP32_GENERIC-20230426-v1.20.0-OTA.bin --app_size 0x170B
+$ mp-image-tool-esp32 ESP32_GENERIC-20230426-v1.20.0-OTA.bin --app_size 0x170B
 Opening image file: ESP32_GENERIC-20230426-v1.20.0-OTA.bin...
 Chip type: esp32
 Flash size: 4MB

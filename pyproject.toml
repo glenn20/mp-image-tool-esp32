@@ -21,8 +21,8 @@ dynamic = ["dependencies"]
 [project.scripts]
 mp-image-tool-esp32 = "mp_image_tool_esp32.main:main"
 
-[tool.hatch.build]
-packages = ["mp_image_tool_esp32"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/mp_image_tool_esp32"]
 
 [tool.ruff]
 target-version = "py37"
