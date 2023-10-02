@@ -81,7 +81,7 @@ class EspDeviceFileWrapper(io.RawIOBase):
     def read(self, nbytes: int = 0x1000) -> bytes:
         return read_flash(self.port, self.pos, nbytes)
 
-    def readinto(self, data: bytearray | memoryview) -> int:
+    def readinto(self, data: bytearray) -> int:
         mv = memoryview(data)
         b = read_flash(self.port, self.pos, len(data))
         mv[: len(b)] = b
