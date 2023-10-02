@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import argparse
 import copy
 import os
 
@@ -12,6 +11,7 @@ from colorama import Fore
 from colorama import init as colorama_init
 
 from . import image_device, image_file
+from .parse_args import parse_args
 from .partition_table import PartError, PartitionTable
 
 MB = 0x100_000  # 1 Megabyte
@@ -135,38 +135,37 @@ def print_error(*args) -> None:
     print(*args, Fore.RESET)
 
 
-colorama_init()
-
-parser = argparse.ArgumentParser()
-parser.add_argument("filename", help="the esp32 image file name")
-parser.add_argument("-q", "--quiet", help="mute program output", action="store_true")
-parser.add_argument("-n", "--dummy", help="no output file", action="store_true")
-parser.add_argument("-d", "--debug", help="print additional info", action="store_true")
-parser.add_argument("--ota", help="build an OTA partition table", action="store_true")
-parser.add_argument("-f", "--flash-size", help="size of flash for new partition table")
-parser.add_argument("-a", "--app-size", help="size of factory and ota app partitions")
-parser.add_argument("--erase-fs", help="erase first 4 blocks of the named fs partition")
-parser.add_argument("--from-csv", help="load new partition table from CSV file")
-parser.add_argument("--erase-part", help="erase the named partition on an esp32 device")
-parser.add_argument("--write-part", help="write a file into a partition", nargs=2)
-parser.add_argument(
-    "--read-part", help="save a partition from an esp32 device to a file", nargs=2
-)
-parser.add_argument(
-    "-x", "--extract-app", help="extract .app-bin from firmware", action="store_true"
-)
-parser.add_argument(
-    "-r",
-    "--resize",
-    help="resize specific partitions by label, eg. --resize factory=0x2M,vfs=0x400K",
-)
+cmd_args = """
+  filename                  | the esp32 firmware image filename
+  -q --quiet                | mute program output | T
+  -n --dummy                | no output file | T
+  -d --debug                | print additional info | T
+  -x --extract-app          | extract .app-bin from firmware | T
+  -f --flash_size SIZE      | size of flash for new partition table
+  -a --app-size SIZE        | size of factory and ota app partitions
+  -r --resize NAME1=SIZE1[,NAME2=SIZE2] \
+                            | resize specific partitions by name, \
+                              eg. --resize factory=0x2M,vfs=0x400K
+  --ota                     | build an OTA partition table | T
+  --from-csv FILE           | load new partition table from CSV file
+  --erase-part NAME1[,NAME2]| erase the named partitions on device flash storage
+  --erase-fs NAME1[,NAME2]  | erase first 4 blocks of the named fs partition
+  --read-part NAME1=FILE1[,NAME2=FILE2] \
+                            | copy partitions to file from flash storage on device
+  --write-part NAME1=FILE1[,NAME2=FILE2] \
+                            | write files into partitions on the device flash
+"""
 
 
-def process_args(args: argparse.Namespace) -> None:
+def process_args() -> None:
+    args = parse_args(cmd_args)
+    print(args)
+    global debug
+    debug = args.debug
     image_device.debug = args.debug  # print esptool.py commands and output
     input: str = args.filename  # the input firmware filename
     verbose = not args.quiet  # verbose is True by default
-    extension = ""  # Each operarion that changes table adds identifier to extension
+    extension = ""  # Each operation that changes table adds identifier to extension
 
     # Open the input firmware file or esp32 device
     if verbose:
@@ -293,12 +292,12 @@ def process_args(args: argparse.Namespace) -> None:
 
 
 def main() -> int:
-    args = parser.parse_args()
+    colorama_init()
     try:
-        process_args(args)
+        process_args()
     except (PartError, ValueError) as err:
         print_error(err)
-        if args.debug:
+        if debug:
             raise err
         return 1
     return 0
