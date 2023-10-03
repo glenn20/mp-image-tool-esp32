@@ -223,17 +223,18 @@ class PartitionTable(list[Part]):
     def expand_part(self, name: str) -> None:
         for i, p in enumerate(self):
             if p.name == name:
-                upper_limit = self[i+1].offset if i < (len(self) - 1) else self.flash_size
-                available = upper_limit - p.offset - p.size
-                if available > 0:
-                    p.size += available
-                    print(f"Partition {name} resized to {p.size:#x} bytes.")
-                elif available == 0:
+                upper_limit = (
+                    self[i + 1].offset if i + 1 < len(self) else self.flash_size
+                )
+                available = upper_limit - p.offset
+                if available > p.size:
+                    self[i] = Part(**(p._asdict() | {"size": available}))
+                    print(f"Partition {name} resized to {available:#x} bytes.")
+                elif available == p.size:
                     print(f"Partition {name} already fills available space.")
                 self.check()
-                break
-        if not p:
-            raise PartError(f'Partition "{name}" not found.')
+                return
+        raise PartError(f'Partition "{name}" not found.')
 
     def resize_flash(self, flash_size: int) -> None:
         # Change size of last partition so it matches the new flash size
