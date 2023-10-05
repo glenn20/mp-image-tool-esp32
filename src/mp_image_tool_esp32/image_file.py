@@ -53,7 +53,7 @@ def open_image_file(filename: str) -> Esp32Image:
     chip_name = CHIP_IDS.get(chip_id, str(chip_id))
     # S3 and C2 image files are written to flash starting at offset 0
     offset = 0 if chip_name in ("esp32s3", "esp32c3") else IMAGE_OFFSET
-    # Get app size from the size of the file.
+    # Get app size from the size of the file. TODO: Should use app_part.offset
     app_size = f.seek(0, 2) - PartitionTable.APP_PART_OFFSET + offset
     f.seek(0)
     return Esp32Image(f, chip_name, flash_size, offset, app_size)
@@ -124,7 +124,7 @@ def copy_with_new_table(input: str, output: str, table: PartitionTable) -> int:
         assert fin.tell() == fout.tell()
         # Copy the app image from the input to the output
         size = table.app_size or table.app_part.size
-        while size > 0:
-            size -= fout.write(fin.read(size))
+        while size > 0 and (n := fout.write(fin.read(size))):
+            size -= n
         assert fin.tell() == fout.tell()
         return fout.tell()
