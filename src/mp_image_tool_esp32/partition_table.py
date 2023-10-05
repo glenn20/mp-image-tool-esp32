@@ -263,32 +263,21 @@ class PartitionTable(list[Part]):
             self.offset = self.flash_size
             self.check()
 
-    def by_name(self, name: str) -> Part | None:
-        return next(filter(lambda p: p.name == name, self), None)
-
     # Change size of partition (and adjusting offsets of following parts if necessary)
     def resize_part(self, name: str, new_size: int) -> None:
-        new_parts: list[Part] = []  # Build a new list of partitions
-        found: bool = False
-        offset: int = self.PART_TABLE_OFFSET
-        for p in self:
-            if found and p.offset != offset:  # Adjust offset of partitions
-                p = p._replace(offset=offset)
-            if p.name == name:  # Change size of partition
-                found = True
-                p = p._replace(size=new_size)
-            offset = p.offset + p.size
-            new_parts.append(p)  # Add adjusted partition to end of list
-        if not found:
-            raise PartError(f'Partition "{name}" not found.')
-        if offset != self.flash_size:
-            # Shrink or expand last partition if it makes everything fit
-            new_parts[-1] = new_parts[-1]._replace(
-                size=max(0x1000, self.flash_size - new_parts[-1].offset)
-            )
-        self.clear()  # Erase the partition table
-        self.extend(new_parts)  # Copy the new list into the Partition table
-        self.check()
+        i = self.index(self[name])
+        if new_size == 0:  # Exapnd to fill available space
+            upper_limit = self[i + 1].offset if i + 1 < len(self) else self.flash_size
+            new_size = upper_limit - self[i].offset
+        self[i] = self[i]._replace(size=new_size)
+        print(f"Resizing {name} partition to {new_size:#x} bytes.")
+        for j in range(i + 1, len(self)):
+            offset = self[j - 1].offset + self[j - 1].size
+            if offset > self[j].offset:  # Shift other partitions to make room
+                self[j] = self[j]._replace(offset=offset)
+            if self.flash_size < self[j].offset + self[j].size:
+                # Shrink other partitions if they overflow the flash storage
+                self[j] = self[j]._replace(size=self.flash_size - self[j].offset)
 
     # Check the partition table for consistency
     # Raises PartError if any inconsistencies found.
