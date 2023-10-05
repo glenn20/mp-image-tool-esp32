@@ -4,7 +4,7 @@ import io
 import os
 import re
 import subprocess
-import sys
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -17,7 +17,8 @@ MB = 0x100_000  # 1 megabyte
 KB = 0x400  # 1 kilobyte
 
 debug = False  # If True, print the esptool.py commands and output
-esptool_args = "--baud 460800"  # Default arguments for the esptool.py commands
+# Default arguments for the esptool.py commands
+esptool_args = "--baud 460800"
 
 
 # A class to hold information about an esp32 firmware file or device
@@ -33,26 +34,39 @@ class Esp32Image:
 # Use shell commands to run esptool.py to read and write from flash storage on
 # esp32 devices.
 def shell(command: str) -> bytes:
-    try:
-        if debug:
-            print("$", command)
-        result = subprocess.run(command, capture_output=True, check=True, shell=True)
-        if debug:
-            print(result.stdout.decode())
-            print(result.stderr.decode())
-    except subprocess.CalledProcessError as e:
-        print(f"{Fore.RED}Error: {e.cmd} returns error {e.returncode}.{Fore.RESET}")
-        if e.stderr:
-            print(e.stderr.decode())
-        if e.stdout:
-            print(e.stdout.decode())
-        sys.exit(e.returncode)
+    if debug:
+        print("$", command)
+    result = subprocess.run(command, capture_output=True, check=True, shell=True)
+    if debug:
+        print(result.stdout.decode())
+        print(result.stderr.decode())
     return result.stdout
 
 
 # Convenience function for calling an esptool.py command.
 def esptool(port: str, command: str) -> bytes:
-    return shell(f"esptool.py {esptool_args} --port {port} {command}")
+    # Keep trying for up to 5 seconds. On some devices, we need to wait up to
+    # 0.6 seconds for serial port to be ready after prvious commands (eg.
+    # esp32s2).
+    global esptool_args
+    for i in range(50, -1, -1):
+        try:
+            return shell(f"esptool.py {esptool_args} --port {port} {command}")
+        except subprocess.CalledProcessError as err:
+            if "set --after option to 'no_reset'" in err.stdout.decode():
+                esptool_args += " --after no_reset"
+            if i == 0:
+                print(
+                    f"{Fore.RED}Error: {err.cmd} returns error "
+                    f"{err.returncode}.{Fore.RESET}"
+                )
+                if err.stderr:
+                    print(err.stderr.decode())
+                if err.stdout:
+                    print(err.stdout.decode())
+                raise err
+            time.sleep(0.1)
+    return b""
 
 
 # Read bytes from the device flash storage using esptool.py
@@ -106,9 +120,11 @@ class EspDeviceFileWrapper(io.RawIOBase):
 
 # Open a wrapper around the serial port for an esp32 device and return
 def open_image_device(filename: str) -> Esp32Image:
+    if not os.path.exists(filename):
+        raise FileNotFoundError(f"No such device: '{filename}'")
     output = esptool(filename, "flash_id").decode()
     match = re.search(r"^Detecting chip type[. ]*(ESP.*)$", output, re.MULTILINE)
-    chip_name: str = match.group(1).lower().replace("_", "") if match else ""
+    chip_name: str = match.group(1).lower().replace("-", "") if match else ""
     match = re.search(r"^Detected flash size: *([0-9]*)MB$", output, re.MULTILINE)
     flash_size = int(match.group(1)) * MB if match else 0
     app_size = 0  # Unknown app size
