@@ -233,7 +233,6 @@ class PartitionTable(list[Part]):
         self.append(Part(PART_MAGIC, type, subtype, offset, size, name.encode(), flags))
         self.offset += size
         self.sort(key=lambda p: p.offset)
-        self.check()
 
     # Change size of partition (and adjusting offsets of following parts if necessary)
     def resize_part(self, name: str, new_size: int) -> None:
