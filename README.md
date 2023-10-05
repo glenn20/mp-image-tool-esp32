@@ -66,40 +66,59 @@ pip install dist/mp_image_tool_esp32*.whl
 ## Usage
 
 ```text
-usage: mp-image-tool-esp32 [-h] [-q] [-n] [-d] [-x] [-f ['SIZE']] [-a ['SIZE']]
-                           [-r ['NAME1=SIZE1[,NAME2=SIZE2]']] [--ota]
-                           [--from-csv ['FILE']] [--erase-part ['NAME1[,NAME2]']]
-                           [--erase-fs ['NAME1[,NAME2]']]
-                           [--read-part ['NAME1=FILE1[,NAME2=FILE2]']]
-                           [--write-part ['NAME1=FILE1[,NAME2=FILE2]']]
+usage: mp-image-tool-esp32 [-h] [-q] [-n] [-d] [-x] [-f SIZE] [-a SIZE]
+                           [--from-csv FILE] [--ota]
+                           [--table NAME1,SUBTYPE,SIZE[/NAME2,...]]
+                           [--add NAME1,SUBTYPE,OFFSET,SIZE[/NAME2,...]]
+                           [--delete NAME1[,NAME2]]
+                           [--resize NAME1=SIZE1[,NAME2=SIZE2]]
+                           [--erase NAME1[,NAME2]] [--erase-fs NAME1[,NAME2]]
+                           [--read NAME1=FILE1[,NAME2=FILE2]]
+                           [--write NAME1=FILE1[,NAME2=FILE2]]
                            filename
+
+positional arguments:
+  filename              the esp32 firmware image filename or serial device
 ```
 
 ### options
 
 ```text
+options:
   -h, --help            show this help message and exit
   -q, --quiet           mute program output
   -n, --dummy           no output file
   -d, --debug           print additional info
   -x, --extract-app     extract .app-bin from firmware
-  -f ['SIZE'], --flash_size ['SIZE']
+  -f SIZE, --flash-size SIZE
                         size of flash for new partition table
-  -a ['SIZE'], --app-size ['SIZE']
+  -a SIZE, --app-size SIZE
                         size of factory and ota app partitions
-  -r ['NAME1=SIZE1[,NAME2=SIZE2]'], --resize ['NAME1=SIZE1[,NAME2=SIZE2]']
-                        resize specific partitions by name, eg. --resize
-                        factory=0x2M,vfs=0x400K
+  --from-csv FILE       load new partition table from CSV file
   --ota                 build an OTA partition table
-  --from-csv ['FILE']   load new partition table from CSV file
-  --erase-part ['NAME1[,NAME2]']
+  --table NAME1,SUBTYPE,SIZE[/NAME2,...]
+                        create new partition table. SUBTYPE is optional in most
+                        cases. Eg. --table nvs,7B/factory,2M/vfs,0
+  --add NAME1,SUBTYPE,OFFSET,SIZE[/NAME2,...]
+                        add new partitions to table
+  --delete NAME1[,NAME2]
+                        delete the named partitions
+  --resize NAME1=SIZE1[,NAME2=SIZE2]
+                        resize partitions eg. --resize factory=2M,nvs=5B,vfs=0.
+                        If SIZE is 0, expand partition to use available space.
+  --erase NAME1[,NAME2]
                         erase the named partitions on device flash storage
-  --erase-fs ['NAME1[,NAME2]']
-                        erase first 4 blocks of the named fs partition
-  --read-part ['NAME1=FILE1[,NAME2=FILE2]']
-                        copy partitions to file from flash storage on device
-  --write-part ['NAME1=FILE1[,NAME2=FILE2]']
-                        write files into partitions on the device flash
+  --erase-fs NAME1[,NAME2]
+                        erase first 4 blocks of a partition on flash storage
+                        (micropython will initialise fs on next boot)
+  --read NAME1=FILE1[,NAME2=FILE2]
+                        copy partition contents to file
+  --write NAME1=FILE1[,NAME2=FILE2]
+                        write file contents into partitions on the device flash
+                        storage.
+
+Where SIZE is a decimal or hex number with an optional suffix (M=megabytes,
+K=kilobytes, B=blocks (0x1000=4096 bytes)).
 ```
 
 ## Examples
