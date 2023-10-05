@@ -297,8 +297,10 @@ def main() -> int:
     colorama_init()
     try:
         process_args()
-    except (PartError, ValueError) as err:
-        print_error(err)
+    except (PartError, ValueError, FileNotFoundError) as err:
+        print_error(f"{type(err).__name__}: {err}")
+        if isinstance(err, PartError) and err.table:
+            err.table.print()
         if debug:
             raise err
         return 1

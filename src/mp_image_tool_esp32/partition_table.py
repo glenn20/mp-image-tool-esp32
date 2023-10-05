@@ -44,8 +44,9 @@ PART_CHKSUM_MAGIC = b"\xeb\xeb"  # If these bytes at end of table, a checksum is
 class PartError(Exception):
     "Raised if an error occurs while reading or building a PartitionTable."
 
-    def __init__(self, msg: str = "Error in partition table."):
-        super().__init__(f"Partition Error: {msg}")
+    def __init__(self, msg: str = "Error in partition table.", table=None):
+        super().__init__(msg)
+        self.table = table
 
 
 class PartTuple(NamedTuple):
@@ -99,7 +100,7 @@ class PartitionTable(list[Part]):
     PART_TABLE_OFFSET = PART_TABLE_OFFSET
     PART_TABLE_SIZE = PART_TABLE_SIZE
     FIRST_PART_OFFSET = FIRST_PART_OFFSET
-    APP_PART_OFFSET = APP_PART_OFFSET  # type: ignore
+    APP_PART_OFFSET = APP_PART_OFFSET
     OTADATA_SIZE = OTADATA_SIZE
 
     def __init__(self, flash_size: int = 0, chip_name: str = ""):
@@ -154,24 +155,24 @@ class PartitionTable(list[Part]):
             )
         )
         if len(self) == 0:
-            raise PartError("No partition table found.")
+            raise PartError("No partition table found.", self)
         n = len(self) * PART_LEN
         # Check if there is a checksum record at the end of the partition table
         if data[n : n + 2] == PART_CHKSUM_MAGIC:
             chksum = data[n + 16 : n + PART_LEN]
             md5 = hashlib.md5(data[:n]).digest()
             if md5 != chksum:  # Verify the checksum
-                raise PartError(f"Checksum: expected {chksum.hex()}, got {md5.hex()}.")
+                raise PartError(
+                    f"Checksum: expected {chksum.hex()}, got {md5.hex()}.", self
+                )
             n += PART_LEN
         # Check that there is at least one empty row next in partition table
         if data[n : n + PART_LEN] != b"\xff" * PART_LEN:
-            raise PartError("Partition table does not end with an empty row.")
+            raise PartError("Partition table does not end with an empty row.", self)
         self.sort(key=lambda p: p.offset)
         if not self.flash_size:  # Infer flash size from partition table
             self.flash_size = self[-1].offset + self[-1].size
             self.offset = self.flash_size
-        if self.app_part:
-            self.APP_PART_OFFSET = self.app_part.offset
         self.check()
         return self
 
@@ -207,7 +208,7 @@ class PartitionTable(list[Part]):
         )
         if not part:
             self.print()
-            raise PartError('No "factory" or "ota_" partition found in table.')
+            raise PartError('No "factory" or "ota_" partition found in table.', self)
         return part
 
     # Add a partition to the table
@@ -224,7 +225,9 @@ class PartitionTable(list[Part]):
         offset = offset or self.offset
         if offset + size > self.flash_size:
             self.print()
-            raise PartError(f"No room on flash for partition {name} ({size:#x} bytes).")
+            raise PartError(
+                f"No room on flash for partition {name} ({size:#x} bytes).", self
+            )
         size = size or (self.flash_size - offset)
         type, subtype = SUBTYPES[subtype_name]
         self.append(Part(PART_MAGIC, type, subtype, offset, size, name.encode(), flags))
@@ -253,33 +256,39 @@ class PartitionTable(list[Part]):
     def check(self) -> None:
         offset = self.FIRST_PART_OFFSET
         names: set[str] = set()
+        self.sort(key=lambda p: p.offset)
         for p in self:
             if p.name in names:
-                raise PartError(f'Partition name, "{p.name}" is repeated.')
+                raise PartError(f'Partition name, "{p.name}" is repeated.', self)
             names.add(p.name)
             if p.offset < offset:
                 raise PartError(
-                    f'Partition "{p.name}" overlaps with previous partition.'
+                    f'Partition "{p.name}" overlaps with previous partition.', self
                 )
             if p.offset > offset:
-                print(f'Warning: Gap before partition "{p.name}".')
+                print(
+                    f'Warning: Free space before "{p.name}" '
+                    f"({p.offset - offset:#x} bytes).",
+                )
             if p.offset % 0x1_000:
                 raise PartError(
-                    f"Partition offset {p.offset:#x} is not multiple of 0x1000."
+                    f"Partition offset {p.offset:#x} is not multiple of 0x1000.", self
                 )
             if p.size % 0x1_000:
                 raise PartError(
-                    f"Partition size {p.size:#x} is not multiple of 0x1000."
+                    f"Partition size {p.size:#x} is not multiple of 0x1000.", self
                 )
             if p.type_name == "app" and p.offset % 0x10_000:
                 raise PartError(
-                    f"App partition offset {p.offset:#x} is not multiple of 0x10000."
+                    f"App partition offset {p.offset:#x} is not multiple of 0x10000.",
+                    self,
                 )
-            offset += p.size
+            offset = p.offset + p.size
         if offset > self.flash_size:
             raise PartError(
                 f"End of last partition ({offset:#x})"
-                f" is greater than flash size ({self.flash_size:#x})."
+                f" is greater than flash size ({self.flash_size:#x}).",
+                self,
             )
         if offset != self.flash_size:
             print(
@@ -287,14 +296,15 @@ class PartitionTable(list[Part]):
                 f" < flash size ({self.flash_size:#x})."
             )
         if self.app_part.offset != self.APP_PART_OFFSET:
-            raise PartError(
-                f"Micropython app at offset={self.app_part.offset}"
-                f" (expected {self.APP_PART_OFFSET})."
+            print(
+                f"Warning: Micropython app at offset={self.app_part.offset:#x}"
+                f" (expected {self.APP_PART_OFFSET:#x})."
             )
         if self.app_size and self.app_part.size < self.app_size:
             raise PartError(
                 f'App partition "{self.app_part.name}"'
-                f" is too small for micropython app ({self.app_size:#x} bytes)."
+                f" is too small for micropython app ({self.app_size:#x} bytes).",
+                self,
             )
 
     def clear(self) -> None:
