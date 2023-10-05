@@ -227,9 +227,7 @@ class PartitionTable(list[Part]):
             raise PartError(f"No room on flash for partition {name} ({size:#x} bytes).")
         size = size or (self.flash_size - offset)
         type, subtype = SUBTYPES[subtype_name]
-        self.append(
-            Part(PART_MAGIC, type, subtype, self.offset, size, name.encode(), flags)
-        )
+        self.append(Part(PART_MAGIC, type, subtype, offset, size, name.encode(), flags))
         self.offset += size
         self.sort(key=lambda p: p.offset)
         self.check()
