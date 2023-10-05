@@ -1,7 +1,6 @@
 # MIT License: Copyright (c) 2023 @glenn20
 
 import argparse
-from itertools import takewhile
 
 MB = 0x100_000  # 1 Megabyte
 KB = 0x400  # 1 Kilobyte
@@ -32,10 +31,14 @@ actions = {
 # Where action is a key from actions dict above.
 def parser(arguments: str) -> argparse.ArgumentParser:
     # Split the arguments string up into lines for processing
-    lines = (s.strip() for s in arguments.strip().splitlines())
-    prog = next(lines)
-    description = " ".join(takewhile(lambda s: s, lines))
-    parser = argparse.ArgumentParser(prog=prog, description=description)
+    preamble, body, epilog, *_ = (s.strip() for s in arguments.split("\n\n") + ["", ""])
+    lines = (s.strip() for s in body.splitlines())
+    prog, description = preamble.split("\n", 1)
+    parser = argparse.ArgumentParser(
+        prog=prog,
+        description=description,
+        epilog=epilog,
+    )
 
     # Lines of cmd_args are like: "arguments | help | action"
     # "filename | filename for output | T" # T means action="store_true"
