@@ -6,7 +6,7 @@ import csv
 import hashlib
 import struct
 from functools import cached_property
-from typing import NamedTuple
+from typing import NamedTuple, SupportsIndex
 
 MB = 0x100_000  # 1 megabyte
 KB = 0x400  # 1 kilobyte
@@ -107,6 +107,24 @@ class PartitionTable(list[Part]):
         self.chip_name = chip_name
         self.app_size = 0
         self.offset = 0
+
+    # Can index by name (str) as well as by position in list (int)
+    def __getitem__(self, key: int | str) -> Part:
+        if not isinstance(key, str):
+            return super().__getitem__(key)  # Delegate to list method
+        if (p := next(p for p in self if p.name == key)) is None:
+            raise PartError(f"Partition {key} not found.", self)
+        return p
+
+    def __setitem__(self, key: SupportsIndex | str, part: Part):
+        index = (
+            next((i for i, p in enumerate(self) if p.name == key), None)
+            if isinstance(key, str)
+            else key
+        )
+        if index is None:
+            raise PartError(f"Partition {key} not found.", self)
+        super().__setitem__(index, part)
 
     def print(self) -> None:
         print(
