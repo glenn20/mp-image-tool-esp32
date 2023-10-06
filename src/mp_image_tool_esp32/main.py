@@ -12,7 +12,7 @@ from colorama import Fore
 from colorama import init as colorama_init
 
 from . import image_device, image_file, parse_args
-from .partition_table import NAME_TO_TYPE, PartError, PartitionTable
+from .partition_table import NAME_TO_TYPE, PartitionError, PartitionTable
 
 MB = 0x100_000  # 1 Megabyte
 KB = 0x400  # 1 Kilobyte
@@ -133,6 +133,14 @@ def print_error(*args, **kwargs) -> None:
     print(*args, Fore.RESET, **kwargs)
 
 
+def process_value(arg: str) -> list[list[str]]:
+    """Break up arg into a list of list of strings."""
+    if re.match(r"\w+=", arg):
+        return [s.split("=") for s in arg.split(",")]
+    else:
+        return [re.split("[=,]", s) for s in arg.split("/")]
+
+
 arguments = """
     mp-image-tool-esp32
     Tool for manipulating MicroPython esp32 firmware image files and flash storage on
@@ -171,14 +179,14 @@ arguments = """
 """
 
 
-def process_args() -> None:
+def process_arguments(arguments: str) -> None:
     parser = parse_args.parser(arguments)
-    options = parser.parse_args()
+    args = parser.parse_args()
     global debug
-    debug = options.debug
-    image_device.debug = options.debug  # print esptool.py commands and output
-    input: str = options.filename  # the input firmware filename
-    verbose = not options.quiet  # verbose is True by default
+    debug = args.debug
+    image_device.debug = args.debug  # print esptool.py commands and output
+    input: str = args.filename  # the input firmware filename
+    verbose = not args.quiet  # verbose is True by default
     extension = ""  # Each operation that changes table adds identifier to extension
 
     # Use u0, a0, and c0 as aliases for /dev/ttyUSB0. /dev/ttyACM0 and COM0
@@ -199,10 +207,11 @@ def process_args() -> None:
             f"({table.app_size // KB:,d} KB)"
         )
         print_table(table)
+    old_table = copy.copy(table)  # Make a deep copy
 
-    arg: str
+    value: str
     # -x --extract-app : Extract the micropython app image from the firmware file
-    if options.extract_app:
+    if args.extract_app:
         basename: str = os.path.basename(input)
         output = basename[:-4] if basename.endswith(".bin") else basename
         output += ".app-bin"
@@ -213,21 +222,21 @@ def process_args() -> None:
     ## Commands to modify the partition table
 
     # -f --flash-size SIZE : Set the size of the flash storage
-    if arg := options.flash_size:
-        flash_size = numeric_arg(arg)
+    if value := args.flash_size:
+        flash_size = numeric_arg(value)
         if flash_size and flash_size != table.flash_size:
             table.flash_size = flash_size
         extension += f"-{flash_size // MB}MB"
 
     # --from-csv FILE : Replace partition table with one loaded from CSV file.
-    if arg := options.from_csv:
-        table.from_csv(arg)
+    if value := args.from_csv:
+        table.from_csv(value)
         extension += "-CSV"
 
     # --table nvs,,7B/factory,,2M/vfs,,0
-    if arg := options.table:
+    if value := args.table:
         table.clear()
-        for name, *rest in (s.split(",") for s in arg.split("/")):
+        for name, *rest in process_value(value):
             subtype = (
                 rest[0]
                 if len(rest) == 2 and rest[0]
@@ -239,41 +248,41 @@ def process_args() -> None:
         extension += "-TABLE"
 
     # --ota : Replace partition table with an OTA-enabled table.
-    if options.ota:
-        app_part_size = numeric_arg(options.app_size)
+    if args.ota:
+        app_part_size = numeric_arg(args.app_size)
         table = new_ota_table(table, app_part_size)
         extension += "-OTA"
 
     # -a --app-size SIZE : Resize all the APP partitions
-    if arg := options.app_size:
-        app_part_size = numeric_arg(arg)
+    if value := args.app_size:
+        app_part_size = numeric_arg(value)
         app_parts = filter(lambda p: p.type == NAME_TO_TYPE["app"], table)
         for p in app_parts:
             table.resize_part(p.name, app_part_size)
-        extension += f"-APP={arg}"
+        extension += f"-APP={value}"
 
     # --delete name1[,name2,..] : Delete a partition from table
-    if arg := options.delete:
-        for name in arg.split(","):
+    if value := args.delete:
+        for name in process_value(value)[0]:
             table.remove(table[name])
-        extension += f"-delete={arg}"
+        extension += f"-delete={value}"
 
-    # --add NAME1,SUBTYPE,OFFSET,SIZE[:NAME2,..] : Add a new partition to table
-    if arg := options.add:
-        for name, subtype, offset, size in (s.split(",") for s in arg.split("/")):
+    # --add NAME1,SUBTYPE,OFFSET,SIZE[/NAME2,..] : Add a new partition to table
+    if value := args.add:
+        for name, subtype, offset, size in process_value(value):
             table.add_part(name, subtype, numeric_arg(size), numeric_arg(offset))
-        extension += f"-add={arg}"
+        extension += f"-add={value}"
 
     # --resize NAME1=SIZE[,NAME2=...] : Resize partitions
-    if arg := options.resize:
-        for name, size in (s.split("=", 1) for s in arg.split(",")):
+    if value := args.resize:
+        for name, size in process_value(value):
             table.resize_part(name, numeric_arg(size))
         table.check()
-        extension += f"-{arg}"
+        extension += f"-{value}"
 
     ## Write the modified partition table to a new file or flash storage on device
 
-    if not options.dummy and extension:
+    if not args.dummy and extension:
         if not image_file.is_device(input):
             # Make a copy of the firmware file with new partition table
             basename: str = os.path.basename(input)
@@ -285,64 +294,80 @@ def process_args() -> None:
             image_file.copy_with_new_table(input, output, table)
         else:
             # Write the new partition table to the ESP32 device
+            if old_table.app_part.offset != table.app_part.offset:
+                raise PartitionError("first app partition offset has changed", table)
             if verbose:
                 print_action(f"Writing new table to flash storage at {input}...")
                 print_table(table)
             image_device.write_table(input, table)
-            # Erase all the partitions before the first app partition
-            # This typically includes any nvs, otadata and phy_init partitions
-            parts = [p for p in table if p.offset < table.app_part.offset]
-            if verbose:
-                part_names = ", ".join(f"'{p.name}'" for p in parts)
-                print_action(f"Erasing partitions: {part_names}...")
-            for p in parts:
-                image_device.erase_part(input, p)
+            # Erase any data partitions which have been moved or resized
+            # for name in ("nvs", "otadata", "vfs"):
+            #     p1, p2 = old_table.by_name(name), table.by_name(name)
+            #     if p2 and (p1 is None or p1.offset != p2.offset or p1.size != p2.size):
+            #         print_action(f"Erasing partition: {p2.name}...")
+            #         image_device.erase_part(input, p2, min(p2.size, 4 * B))
+            oldparts, newparts = (p for p in old_table), (p for p in table)
+            p1 = next(oldparts)
+            for p2 in newparts:
+                while p1 and p1.offset < p2.offset:
+                    p1 = next(oldparts, None)
+                if p2.type_name == "data" and p1 != p2:
+                    print_action(f"Erasing partition: {p2.name}...")
+                    image_device.erase_part(input, p2, min(p2.size, 4 * B))
+                if p2.type_name == "app":
+                    # Check there is an app at the start of the partition
+                    data = image_device.read_flash(input, p2.offset, 1 * B)
+                    if (
+                        data[: len(image_file.APP_IMAGE_MAGIC)]
+                        != image_file.APP_IMAGE_MAGIC
+                    ):
+                        print(f"Warning: '{p2.name}' does not contain app image.")
 
     # For erasing/reading/writing flash storage partitions
 
     # --erase NAME1[,NAME2,...] : Erase the partitions on the flash storage
-    if arg := options.erase:
+    if value := args.erase:
         if not image_file.is_device(input):
             raise ValueError("--erase requires an esp32 device")
-        for name in arg.split(","):
-            if not options.dummy:
+        for name in process_value(value)[0]:
+            if not args.dummy:
                 image_device.erase_part(input, table[name])
 
     # --erase-fs NAME1[,NAME2,...] : Erase the first 4 blocks of partitions
     # Micropython will automatically re-initialise the filesystem on boot.
-    if arg := options.erase_fs:
+    if value := args.erase_fs:
         if not image_file.is_device(input):
             raise ValueError("--erase-fs requires an esp32 device")
-        for name in arg.split(","):
+        for name in process_value(value)[0]:
             part = table[name]
             if part.name not in ("vfs", "ffat"):
-                raise PartError(f'partition "{part.name}" is not a fs partition.')
-            print_action(f'Erasing filesystem on partition "{part.name}"...')
-            if not options.dummy:
+                raise PartitionError(f"partition '{part.name}' is not a fs partition.")
+            print_action(f"Erasing filesystem on partition '{part.name}'...")
+            if not args.dummy:
                 image_device.erase_part(input, part, 4 * B)
 
     # --read NAME1=FILE1[,NAME2=...] : Read contents of partition NAME1 into FILE
-    if arg := options.read:
+    if value := args.read:
         if not image_file.is_device(input):
             raise ValueError("--read requires an esp32 device")
-        for name, filename in (s.split("=", 1) for s in arg.split(",")):
+        for name, filename in process_value(value):
             part = table[name]
             if verbose:
                 print_action(f"Saving partition '{name}' into '{filename}'...")
-            if not options.dummy:
+            if not args.dummy:
                 n = image_device.read_part(input, part, filename)
                 if verbose:
                     print(f"Wrote {n:#x} bytes to '{filename}'.")
 
     # --write NAME1=FILE1[,NAME2=...] : Write contents of FILE into partition NAME1
-    if arg := options.write:
+    if value := args.write:
         if not image_file.is_device(input):
             raise ValueError("--write requires an esp32 device")
-        for name, filename in (s.split("=", 1) for s in arg.split(",")):
+        for name, filename in process_value(value):
             part = table[name]
             if verbose:
                 print_action(f"Writing partition '{name}' from '{filename}'...")
-            if not options.dummy:
+            if not args.dummy:
                 n = image_device.write_part(input, part, filename)
                 if verbose:
                     print(f"Wrote {n:#x} bytes to partition '{name}'.")
@@ -351,10 +376,10 @@ def process_args() -> None:
 def main() -> int:
     colorama_init()
     try:
-        process_args()
-    except (PartError, ValueError, FileNotFoundError) as err:
+        process_arguments(arguments)
+    except (PartitionError, ValueError, FileNotFoundError) as err:
         print_error(f"{type(err).__name__}: {err}")
-        if isinstance(err, PartError) and err.table:
+        if isinstance(err, PartitionError) and err.table:
             err.table.print()
         if debug:
             raise err

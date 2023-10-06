@@ -39,9 +39,10 @@ PART_FMT = b"<2sBBLL16sL"  # Struct format to read a partition from partition ta
 PART_LEN = 32  # Size of one entry in partition table (32 bytes)
 PART_MAGIC = b"\xaa\x50"  # Magic bytes present at start of each partition
 PART_CHKSUM_MAGIC = b"\xeb\xeb"  # If these bytes at end of table, a checksum is present
+PART_NAME_LEN = 16  # Length of the Partition label
 
 
-class PartError(Exception):
+class PartitionError(Exception):
     "Raised if an error occurs while reading or building a PartitionTable."
 
     def __init__(self, msg: str = "Error in partition table.", table=None):
@@ -113,8 +114,8 @@ class PartitionTable(list[Part]):
     def __getitem__(self, key: int | str) -> Part:
         if not isinstance(key, str):
             return super().__getitem__(key)  # Delegate to list method
-        if (p := next(p for p in self if p.name == key)) is None:
-            raise PartError(f"Partition {key} not found.", self)
+        if (p := next((p for p in self if p.name == key), None)) is None:
+            raise PartitionError(f"Partition {key} not found.", self)
         return p
 
     def __setitem__(self, key: SupportsIndex | str, part: Part):
@@ -124,8 +125,11 @@ class PartitionTable(list[Part]):
             else key
         )
         if index is None:
-            raise PartError(f"Partition {key} not found.", self)
+            raise PartitionError(f"Partition {key} not found.", self)
         super().__setitem__(index, part)
+
+    def by_name(self, name: str) -> Part | None:
+        return next((p for p in self if p.name == name), None)
 
     def print(self) -> None:
         print(
@@ -155,20 +159,22 @@ class PartitionTable(list[Part]):
             )
         )
         if len(self) == 0:
-            raise PartError("No partition table found.", self)
+            raise PartitionError("No partition table found.", self)
         n = len(self) * PART_LEN
         # Check if there is a checksum record at the end of the partition table
         if data[n : n + 2] == PART_CHKSUM_MAGIC:
             chksum = data[n + 16 : n + PART_LEN]
             md5 = hashlib.md5(data[:n]).digest()
             if md5 != chksum:  # Verify the checksum
-                raise PartError(
+                raise PartitionError(
                     f"Checksum: expected {chksum.hex()}, got {md5.hex()}.", self
                 )
             n += PART_LEN
         # Check that there is at least one empty row next in partition table
         if data[n : n + PART_LEN] != b"\xff" * PART_LEN:
-            raise PartError("Partition table does not end with an empty row.", self)
+            raise PartitionError(
+                "Partition table does not end with an empty row.", self
+            )
         self.sort(key=lambda p: p.offset)
         if not self.flash_size:  # Infer flash size from partition table
             self.flash_size = self[-1].offset + self[-1].size
@@ -202,13 +208,9 @@ class PartitionTable(list[Part]):
     # Find the first app partition offset.
     @property
     def app_part(self) -> Part:
-        part = next(
-            filter(lambda p: p.subtype_name in ("factory", "ota_0"), self),
-            None,
-        )
+        part = next(filter(lambda p: p.type_name == "app", self), None)
         if not part:
-            self.print()
-            raise PartError('No "factory" or "ota_" partition found in table.', self)
+            raise PartitionError("No app partition found in table.", self)
         return part
 
     # Add a partition to the table
@@ -224,13 +226,14 @@ class PartitionTable(list[Part]):
             self.offset = self.FIRST_PART_OFFSET
         offset = offset or self.offset
         if offset + size > self.flash_size:
-            self.print()
-            raise PartError(
+            raise PartitionError(
                 f"No room on flash for partition {name} ({size:#x} bytes).", self
             )
         size = size or (self.flash_size - offset)
         type, subtype = SUBTYPES[subtype_name]
-        self.append(Part(PART_MAGIC, type, subtype, offset, size, name.encode(), flags))
+        namebytes = name.encode()
+        namebytes = namebytes + b"\x00" * (PART_NAME_LEN - len(namebytes))
+        self.append(Part(PART_MAGIC, type, subtype, offset, size, namebytes, flags))
         self.offset += size
         self.sort(key=lambda p: p.offset)
 
@@ -258,33 +261,34 @@ class PartitionTable(list[Part]):
         self.sort(key=lambda p: p.offset)
         for p in self:
             if p.name in names:
-                raise PartError(f'Partition name, "{p.name}" is repeated.', self)
+                raise PartitionError(f"'{p.name}' is repeated.", self)
             names.add(p.name)
             if p.offset < offset:
-                raise PartError(
-                    f'Partition "{p.name}" overlaps with previous partition.', self
+                raise PartitionError(
+                    f"'{p.name}' overlaps with previous partition.", self
                 )
             if p.offset > offset:
                 print(
-                    f'Warning: Free space before "{p.name}" '
+                    f"Warning: Free space before '{p.name}' "
                     f"({p.offset - offset:#x} bytes).",
                 )
             if p.offset % 0x1_000:
-                raise PartError(
-                    f"Partition offset {p.offset:#x} is not multiple of 0x1000.", self
+                raise PartitionError(
+                    f"'{p.name}' offset {p.offset:#x} is not multiple of 0x1000.", self
                 )
             if p.size % 0x1_000:
-                raise PartError(
-                    f"Partition size {p.size:#x} is not multiple of 0x1000.", self
+                raise PartitionError(
+                    f"'{p.name}' size {p.size:#x} is not multiple of 0x1000.", self
                 )
             if p.type_name == "app" and p.offset % 0x10_000:
-                raise PartError(
-                    f"App partition offset {p.offset:#x} is not multiple of 0x10000.",
+                raise PartitionError(
+                    f"App partition '{p.name}' offset {p.offset:#x}"
+                    f" is not multiple of 0x10000.",
                     self,
                 )
             offset = p.offset + p.size
         if offset > self.flash_size:
-            raise PartError(
+            raise PartitionError(
                 f"End of last partition ({offset:#x})"
                 f" is greater than flash size ({self.flash_size:#x}).",
                 self,
@@ -296,11 +300,11 @@ class PartitionTable(list[Part]):
             )
         if self.app_part.offset != self.APP_PART_OFFSET:
             print(
-                f"Warning: Micropython app at offset={self.app_part.offset:#x}"
+                f"Warning: First app at offset={self.app_part.offset:#x}"
                 f" (expected {self.APP_PART_OFFSET:#x})."
             )
         if self.app_size and self.app_part.size < self.app_size:
-            raise PartError(
+            raise PartitionError(
                 f'App partition "{self.app_part.name}"'
                 f" is too small for micropython app ({self.app_size:#x} bytes).",
                 self,
