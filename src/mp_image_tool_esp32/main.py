@@ -118,9 +118,6 @@ def print_table(table: PartitionTable) -> None:
                 rem=(table.app_part.size - table.app_size) // KB,
             )
         )
-    vfs = table[-1] if table[-1].name in ("vfs", "ffat") else None
-    if vfs:
-        print(f"Filesystem partition '{vfs.name}' is {vfs.size / MB:0.1f} MB.")
 
 
 def print_action(*args, **kwargs) -> None:
@@ -202,10 +199,11 @@ def process_arguments(arguments: str) -> None:
     if verbose:
         print(f"Chip type: {table.chip_name}")
         print(f"Flash size: {table.flash_size // MB}MB")
-        print(
-            f"Micropython App size: {table.app_size:#x} bytes "
-            f"({table.app_size // KB:,d} KB)"
-        )
+        if table.app_size:
+            print(
+                f"Micropython App size: {table.app_size:#x} bytes "
+                f"({table.app_size // KB:,d} KB)"
+            )
         print_table(table)
     old_table = copy.copy(table)  # Make a deep copy
 
