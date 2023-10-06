@@ -6,7 +6,6 @@ import re
 import subprocess
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 from colorama import Fore
@@ -46,7 +45,7 @@ def shell(command: str) -> bytes:
 # Convenience function for calling an esptool.py command.
 def esptool(port: str, command: str) -> bytes:
     # Keep trying for up to 5 seconds. On some devices, we need to wait up to
-    # 0.6 seconds for serial port to be ready after prvious commands (eg.
+    # 0.6 seconds for serial port to be ready after previous commands (eg.
     # esp32s2).
     global esptool_args
     for i in range(50, -1, -1):
@@ -74,14 +73,15 @@ def esptool(port: str, command: str) -> bytes:
 def read_flash(filename: str, offset: int, size: int) -> bytes:
     with NamedTemporaryFile("w+b", prefix="mp-image-tool-esp32-") as f:
         esptool(filename, f"read_flash {offset:#x} {size:#x} {f.name}")
-        return Path(f.name).read_bytes()
+        return f.read()
 
 
 # Write bytes to the device flash storage using esptool.py
 # Offset should be a multiple of 0x1000 (4096), the device block size
 def write_flash(filename: str, offset: int, data: bytes) -> int:
     with NamedTemporaryFile("w+b", prefix="mp-image-tool-esp32-") as f:
-        Path(f.name).write_bytes(data)
+        f.write(data)
+        f.flush()
         esptool(filename, f"write_flash {offset:#x} {f.name}")
     return len(data)
 
