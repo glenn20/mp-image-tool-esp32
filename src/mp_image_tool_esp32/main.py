@@ -121,6 +121,26 @@ def print_table(table: PartitionTable) -> None:
         )
 
 
+# Update the bootloader header with the flash_size, if it has changed.
+def update_bootloader_header(input: str, table: PartitionTable) -> None:
+    with image_file.open_image(input) as image:
+        f = image.file
+        bootloader_offset = (
+            0 if image.chip_name in ("esp32s3", "esp32c3") else image_file.IMAGE_OFFSET
+        )
+        f.seek(bootloader_offset)
+        header = bytearray(f.read(1 * B))
+        flash_id = header[image_file.FLASH_SIZE_OFFSET] >> 4
+        flash_size = (2**flash_id) * MB
+        if flash_size != table.flash_size:
+            print_action(
+                f"Setting flash_size in bootloader to {table.flash_size/MB}MB..."
+            )
+            image_file.set_header_flash_size(header, table.flash_size)
+            f.seek(bootloader_offset)
+            f.write(header)
+
+
 def print_action(*args, **kwargs) -> None:
     print(Fore.GREEN, end="")
     print(*args, Fore.RESET, **kwargs)
@@ -329,6 +349,8 @@ def process_arguments(arguments: str) -> None:
                 print_action(f"Writing new table to flash storage at {input}...")
                 print_table(table)
             image_device.write_table(input, table)
+            # Update flash size in bootloader header if it has changed
+            update_bootloader_header(input, table)
             # Erase any data partitions which have been moved or resized
             oldparts, newparts = (p for p in old_table), (p for p in table)
             p1 = next(oldparts)
