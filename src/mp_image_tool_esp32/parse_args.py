@@ -34,7 +34,6 @@ def parser(arguments: str) -> argparse.ArgumentParser:
     preamble, body, *epilog = (s.strip() for s in arguments.split("\n\n") + ["", ""])
     lines = (s.strip() for s in body.splitlines())
     prog, description = preamble.split("\n", 1)
-    print(epilog)
     parser = argparse.ArgumentParser(
         prog=prog,
         description=description,
