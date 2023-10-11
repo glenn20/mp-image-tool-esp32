@@ -51,7 +51,7 @@ def ota_part_size(flash_size: int) -> int:
 # Convert a partition table format string to build a partition table
 def table_spec(fmt: str, **kwargs) -> list[tuple[str, str, int]]:
     return [
-        (name, type, int(size))
+        (name, type, int(size, 0))
         for name, type, size in [
             line.split() for line in fmt.strip().format(**kwargs).split("\n")
         ]
@@ -113,7 +113,7 @@ def print_table(table: PartitionTable) -> None:
     if table.app_part and table.app_size:
         print(
             "Micropython app fills {used:0.1f}% of {app} partition "
-            "({rem} kB unused)".format(
+            "({rem} kB free)".format(
                 used=100 * table.app_size / table.app_part.size,
                 app=table.app_part.name,
                 rem=(table.app_part.size - table.app_size) // KB,
@@ -177,10 +177,12 @@ arguments = """
     -f --flash-size SIZE| size of flash for new partition table
     -a --app-size SIZE  | size of factory and ota app partitions
     --from-csv FILE     | load new partition table from CSV file
-    --ota               | build an OTA partition table | T
-    --table NAME1=SUBTYPE-SIZE[,NAME2,...] \
-                        | create new partition table. SUBTYPE is optional in \
-                          most cases. Eg. --table nvs=7B,factory=2M,vfs=0
+    --table ota/default/NAME1=SUBTYPE:SIZE[,NAME2,...] \
+                        | create new partition table, eg: \
+                          "--table ota" (install an OTA-enabled partition table), \
+                          "--table default" (default (non-OTA) partition table), \
+                          "--table nvs=7B,factory=2M,vfs=0". \
+                          SUBTYPE is optional in most cases (inferred from name).
     --delete NAME1[,NAME2] | delete the named partitions
     --add NAME1:SUBTYPE:OFFSET:SIZE[,NAME2,...] \
                         | add new partitions to table
@@ -217,7 +219,6 @@ class ProgramArgs:
     flash_size: str
     app_size: str
     from_csv: str
-    ota: bool
     table: str
     delete: str
     add: str
@@ -285,22 +286,26 @@ def process_arguments(arguments: str) -> None:
 
     # --table nvs,,7B:factory,,2M:vfs,,0
     if value := args.table:
-        table.clear()
-        for name, *rest in split_values(value):
-            subtype = (
-                rest[0]
-                if len(rest) == 2 and rest[0]
-                else default_subtype.get(name, name)
-            )
-            size = numeric_arg(rest[-1])
-            table.add_part(name.strip(), subtype.strip(), size)
+        if value == "ota":
+            table = new_ota_table(table)
+            extension += "-OTA"
+        elif value == "default":
+            table.clear()
+            for p in table_spec(DEFAULT_TABLE_FMT):
+                table.add_part(*p)
+            extension += "-DEFAULT"
+        else:
+            table.clear()
+            for name, *rest in split_values(value):
+                subtype = (
+                    rest[0]
+                    if len(rest) == 2 and rest[0]
+                    else default_subtype.get(name, name)
+                )
+                size = numeric_arg(rest[-1])
+                table.add_part(name.strip(), subtype.strip(), size)
+            extension += "-TABLE"
         table.check()
-        extension += "-TABLE"
-
-    # --ota : Replace partition table with an OTA-enabled table.
-    if args.ota:
-        table = new_ota_table(table)
-        extension += "-OTA"
 
     # -a --app-size SIZE : Resize all the APP partitions
     if value := args.app_size:
