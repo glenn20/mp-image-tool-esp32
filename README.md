@@ -1,12 +1,12 @@
 # mp-image-tool-esp32
 
-Tool for manipulating MicroPython esp32 firmware image files.
+Tool for manipulating partition tables in MicroPython esp32 firmware image files
+and device flash storage.
 
-`mp-image-tool-esp32` manipulates partition tables and contents of micropython
-esp32 firmware files (such as those at
-<https://micropython.org/download?port=esp32>) and flash storage on ESP32
-devices. It has been tested to work with ESP32, ESP32-S2 and ESP32-S3 firmware
-images and devices.
+`mp-image-tool-esp32` manipulates micropython esp32 firmware files (such as
+those at <https://micropython.org/download?port=esp32>) and flash storage on
+serial-attached ESP32 devices. It has been tested to work with ESP32, ESP32-S2
+and ESP32-S3 firmware images and devices.
 
 ```console
 $ mp-image-tool-esp32 ESP32_GENERIC-20231005-v1.21.0.bin
@@ -65,6 +65,7 @@ it will print the partition table of `filename`.
   - `--erase-fs vfs` : erase 'vfs' filesystem
     - erases the first 4 blocks of the partition - micropython will
       automatically build a fresh filesystem on the next boot
+  - `--bootloader bootloader.bin` : load a new bootloader from file
 
 `mp-image-tool-esp32` uses the
 [`esptool.py`](https://github.com/espressif/esptool) program to perform the
@@ -74,10 +75,10 @@ operations on attached esp32 devices.
 
 To use without installing:
 
-- Prerequisites:
+- Prerequisites (esptool and colorama):
 
   ```bash
-  pip install esptool colorama
+  pip install -r requirements.txt
   ```
 
 - Usage:
@@ -265,6 +266,7 @@ options:
                         copy partition contents to file
   --write NAME1=FILE1[,NAME2=FILE2]
                         write file contents into partitions on the device flash storage.
+  --bootloader FILE     load a new bootloader from FILE
 
 Where SIZE is a decimal or hex number with an optional suffix (M=megabytes, K=kilobytes,
 B=blocks (0x1000=4096 bytes)). Options --erase, --erase-fs, --read, --write and --bootloader

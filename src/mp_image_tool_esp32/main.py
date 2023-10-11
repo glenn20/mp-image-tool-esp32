@@ -199,6 +199,7 @@ arguments = """
     --write NAME1=FILE1[,NAME2=FILE2] \
                         | write file contents into partitions on the \
                           device flash storage.
+    --bootloader FILE   | load a new bootloader from FILE
 
     Where SIZE is a decimal or hex number with an optional suffix (M=megabytes,
     K=kilobytes, B=blocks (0x1000=4096 bytes)).
@@ -209,6 +210,7 @@ arguments = """
 
 
 # Static type checking for the return value of argparse.parse_args()
+# Must include a field for each argparse option.
 @dataclass
 class ProgramArgs:
     filename: str
@@ -227,6 +229,7 @@ class ProgramArgs:
     erase_fs: str
     read: str
     write: str
+    bootloader: str
 
 
 def process_arguments(arguments: str) -> None:
@@ -428,6 +431,20 @@ def process_arguments(arguments: str) -> None:
                 n = image_device.write_part(input, part, filename)
                 if verbose:
                     print(f"Wrote {n:#x} bytes to partition '{name}'.")
+
+    # --bootloader FILE: load a new bootloader from FILE
+    if value := args.bootloader:
+        if not image_file.is_device(input):
+            raise ValueError("--write requires an esp32 device")
+        if verbose:
+            print_action(f"Writing bootloader from '{value}'...")
+        bootloader_offset = (
+            0 if table.chip_name in ("esp32s3", "esp32c3") else image_file.IMAGE_OFFSET
+        )
+        if not args.dummy:
+            n = image_device.write_bootloader(input, value, bootloader_offset)
+            if verbose:
+                print(f"Wrote {n:#x} bytes to bootloader.")
 
 
 def main() -> int:

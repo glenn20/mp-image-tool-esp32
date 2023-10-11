@@ -163,3 +163,14 @@ def write_part(device: str, part: Part, input: str) -> int:
         )
     esptool(device, f"write_flash {part.offset:#x} {input}")
     return os.path.getsize(input)
+
+
+# Write data from a file to a partition on device
+def write_bootloader(device: str, input: str, offset: int = 0) -> int:
+    size, max_size = os.path.getsize(input), PartitionTable.BOOTLOADER_SIZE
+    if max_size < size:
+        raise ValueError(
+            f"File ({size} bytes) is too big for bootloader ({max_size} bytes)."
+        )
+    esptool(device, f"write_flash {offset:#x} {input}")
+    return size
