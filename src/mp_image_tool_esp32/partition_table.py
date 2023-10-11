@@ -8,11 +8,11 @@ import struct
 from functools import cached_property
 from typing import NamedTuple, SupportsIndex
 
-MB = 0x100_000  # 1 megabyte
-KB = 0x400  # 1 kilobyte
+from .common import KB, MB
 
 # The default layout in flash storage on device
 FLASH_SIZE = 0x400_000  # Defaults size of flash storage (4 Megabytes)
+IMAGE_OFFSET = 0x1000  # Offset in flash to write firmware (set to 0 on S3 and C2)
 BOOTLOADER_OFFSET = 0x1_000  # Offset of Bootloader in flash storage (bytes)
 BOOTLOADER_SIZE = 0x7_000  # Size allowed for Bootloader in flash
 PART_TABLE_OFFSET = 0x8_000  # Offset of the partition table in flash

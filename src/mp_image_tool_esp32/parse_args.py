@@ -2,11 +2,6 @@
 
 import argparse
 
-MB = 0x100_000  # 1 Megabyte
-KB = 0x400  # 1 Kilobyte
-B = 0x1_000  # 1 Block (4096 bytes)
-SIZE_UNITS = {"M": MB, "K": KB, "B": B}
-
 actions = {
     "S": "store",
     "T": "store_true",

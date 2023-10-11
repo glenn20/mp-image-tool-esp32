@@ -7,55 +7,29 @@ from __future__ import annotations
 import copy
 import os
 import re
+import shutil
 from dataclasses import dataclass
 
-from colorama import Fore
 from colorama import init as colorama_init
 
-from . import image_device, image_file, parse_args
+from . import image_device, image_file, layouts, parse_args
+from .common import KB, MB, B, print_action, print_error
 from .partition_table import NAME_TO_TYPE, PartitionError, PartitionTable
 
-MB = 0x100_000  # 1 Megabyte
-KB = 0x400  # 1 Kilobyte
-B = 0x1_000  # 1 Block (4096 bytes)
 SIZE_UNITS = {"M": MB, "K": KB, "B": B}
-# Recommended size for OTA app partitions (depends on flash_size).
-OTA_PART_SIZES = (
-    (8 * MB, 0x270_000),  # if flash size > 8MB
-    (4 * MB, 0x200_000),  # else if flash size > 4MB
-    (0 * MB, 0x180_000),  # else if flash size > 0MB
-)
-DEFAULT_TABLE_FMT = """
-nvs       nvs        0x7000
-factory   factory  0x1f0000
-vfs       fat             0
-"""
-OTA_TABLE_FMT = """
-nvs       nvs         {nvs}
-otadata   ota     {otadata}
-ota_0     ota_0     {ota_0}
-ota_1     ota_1     {ota_1}
-vfs       fat             0
-"""
-# Mapping of partition names to default subtypes
-# Don't need to include where name==subtype as will fall back name.
-default_subtype: dict[str, str] = {"otadata": "ota", "vfs": "fat", "phy_init": "phy"}
 debug = False
 
+# Delimiters for splitting up values of command arguments
+# First level split is on "," and then on "=" or ":" or "-"
+DELIMITERS = [r"\s*,\s*", r"\s*[=:-]\s*"]
 
-# Return the recommended OTA app part size (depends on flash_size)
-def ota_part_size(flash_size: int) -> int:
-    return next(part_size for fsize, part_size in OTA_PART_SIZES if flash_size > fsize)
 
-
-# Convert a partition table format string to build a partition table
-def table_spec(fmt: str, **kwargs) -> list[tuple[str, str, int]]:
-    return [
-        (name, type, int(size, 0))
-        for name, type, size in [
-            line.split() for line in fmt.strip().format(**kwargs).split("\n")
-        ]
-    ]
+# Split arguments into a list of list of strings
+# eg: "nvs=7M,factory=2M" -> [["nvs", "7M"], ["factory", "2M"]]
+# eg: "nvs=nvs:7M factory-2M" -> [["nvs", nvs, "7M"], ["factory", "2M"]]
+def split_values(arg: str) -> list[list[str]]:
+    """Break up arg into a list of list of strings."""
+    return [re.split(DELIMITERS[1], s) for s in re.split(DELIMITERS[0], arg.strip())]
 
 
 # Process a string containing a number with an optional unit suffix
@@ -70,106 +44,13 @@ def numeric_arg(arg: str) -> int:
     return int(arg, 0) * unit
 
 
-# Build a new OTA-enabled partition table for the given flash size and app
-# partition size. Will check can accommodate given app_size.
-def new_ota_table(
-    old_table: PartitionTable,
-    app_part_size: int = 0,  # Size of the partition to hold the app (bytes)
-) -> PartitionTable:
-    flash_size = old_table.flash_size
-    table = copy.copy(old_table)
-    table.clear()  # Empty the partition table
-    if not app_part_size:
-        app_part_size = ota_part_size(flash_size)
-    nvs_part_size = (
-        old_table.app_part.offset - table.FIRST_PART_OFFSET - table.OTADATA_SIZE
-    )
-    spec = table_spec(
-        OTA_TABLE_FMT,
-        nvs=nvs_part_size,
-        otadata=table.OTADATA_SIZE,
-        ota_0=app_part_size,
-        ota_1=app_part_size,
-    )
-    for p in spec:
-        table.add_part(*p)
-    table.check()
-    return table
-
-
-# Provide a detailed printout of the partition table
-def print_table(table: PartitionTable) -> None:
-    colors = dict(c=Fore.CYAN, r=Fore.RED, _=Fore.RESET)
-
-    print(Fore.CYAN, end="")
-    print(
-        "{c}Partition table (flash size: {r}{size}MB{c}):".format(
-            size=table.flash_size // MB, **colors
-        )
-    )
-    table.print()
-    print(Fore.RESET, end="")
-    table.check()
-    if table.app_part and table.app_size:
-        print(
-            "Micropython app fills {used:0.1f}% of {app} partition "
-            "({rem} kB free)".format(
-                used=100 * table.app_size / table.app_part.size,
-                app=table.app_part.name,
-                rem=(table.app_part.size - table.app_size) // KB,
-            )
-        )
-
-
-# Update the bootloader header with the flash_size, if it has changed.
-def update_bootloader_header(input: str, table: PartitionTable) -> None:
-    with image_file.open_image(input) as image:
-        f = image.file
-        bootloader_offset = (
-            0 if image.chip_name in ("esp32s3", "esp32c3") else image_file.IMAGE_OFFSET
-        )
-        f.seek(bootloader_offset)
-        header = bytearray(f.read(1 * B))
-        flash_id = header[image_file.FLASH_SIZE_OFFSET] >> 4
-        flash_size = (2**flash_id) * MB
-        if flash_size != table.flash_size:
-            print_action(
-                f"Setting flash_size in bootloader to {table.flash_size/MB}MB..."
-            )
-            image_file.set_header_flash_size(header, table.flash_size)
-            f.seek(bootloader_offset)
-            f.write(header)
-
-
-def print_action(*args, **kwargs) -> None:
-    print(Fore.GREEN, end="")
-    print(*args, Fore.RESET, **kwargs)
-
-
-def print_error(*args, **kwargs) -> None:
-    print(Fore.RED, end="")
-    print(*args, Fore.RESET, **kwargs)
-
-
-# Delimiters for splitting up values of command arguments
-# First level split is on " " or "," and then on "=" or ":" or "-"
-DELIMITERS = ["[ ,]", "[=:-]"]
-
-
-# Split arguments into a list of list of strings
-# eg: "nvs=7M,factory=2M" -> [["nvs", "7M"], ["factory", "2M"]]
-# eg: "nvs=nvs:7M factory-2M" -> [["nvs", nvs, "7M"], ["factory", "2M"]]
-def split_values(arg: str) -> list[list[str]]:
-    """Break up arg into a list of list of strings."""
-    return [re.split(DELIMITERS[1], s) for s in re.split(DELIMITERS[0], arg)]
-
-
 arguments = """
     mp-image-tool-esp32
-    Tool for manipulating MicroPython esp32 firmware image files and flash storage on
-    esp32 devices.
+    Tool for manipulating MicroPython esp32 firmware files and flash storage
+    on esp32 devices.
 
     filename            | the esp32 firmware image filename or serial device
+    -o --output         | output filename
     -q --quiet          | mute program output | T
     -n --dummy          | no output file | T
     -d --debug          | print additional info | T
@@ -210,10 +91,11 @@ arguments = """
 
 
 # Static type checking for the return value of argparse.parse_args()
-# Must include a field for each argparse option.
+# Must include a field for each argparse option above.
 @dataclass
 class ProgramArgs:
     filename: str
+    output: str
     quiet: bool
     dummy: bool
     debug: bool
@@ -234,6 +116,7 @@ class ProgramArgs:
 
 def process_arguments(arguments: str) -> None:
     parser = parse_args.parser(arguments)
+    # Add static type checking to parser.parse_args() (from argparse).
     args = ProgramArgs(**vars(parser.parse_args()))
     global debug
     debug = args.debug
@@ -251,7 +134,8 @@ def process_arguments(arguments: str) -> None:
     if verbose:
         desc = "esp32 device at" if image_file.is_device(input) else "image file"
         print_action(f"Opening {desc}: {input}...")
-    table = image_file.load_partition_table(input)
+    image = image_file.open_image(input)
+    table: PartitionTable = image_file.load_partition_table(image)
     if verbose:
         print(f"Chip type: {table.chip_name}")
         print(f"Flash size: {table.flash_size // MB}MB")
@@ -260,8 +144,9 @@ def process_arguments(arguments: str) -> None:
                 f"Micropython App size: {table.app_size:#x} bytes "
                 f"({table.app_size // KB:,d} KB)"
             )
-        print_table(table)
-    old_table = copy.copy(table)  # Preserve a deep copy of the original table
+        layouts.print_table(table)
+    copy.copy(image)
+    initial_table = copy.copy(table)  # Preserve a deep copy of the original table
 
     value: str
     # -x --extract-app : Extract the micropython app image from the firmware file
@@ -271,7 +156,7 @@ def process_arguments(arguments: str) -> None:
         output += ".app-bin"
         if verbose:
             print_action(f"Writing micropython app image file: {output}...")
-        image_file.save_app_image(input, output, table)
+        image_file.save_app_image(image, output, table)
 
     ## Commands to modify the partition table
 
@@ -287,27 +172,22 @@ def process_arguments(arguments: str) -> None:
         table.from_csv(value)
         extension += "-CSV"
 
-    # --table nvs,,7B:factory,,2M:vfs,,0
+    # --table nvs=7B,factory=2M,vfs=0
     if value := args.table:
         if value == "ota":
-            table = new_ota_table(table)
+            value = layouts.make_ota_layout(table)
             extension += "-OTA"
         elif value == "default":
-            table.clear()
-            for p in table_spec(DEFAULT_TABLE_FMT):
-                table.add_part(*p)
+            value = layouts.DEFAULT_TABLE_LAYOUT
             extension += "-DEFAULT"
         else:
-            table.clear()
-            for name, *rest in split_values(value):
-                subtype = (
-                    rest[0]
-                    if len(rest) == 2 and rest[0]
-                    else default_subtype.get(name, name)
-                )
-                size = numeric_arg(rest[-1])
-                table.add_part(name.strip(), subtype.strip(), size)
             extension += "-TABLE"
+        # Break up the value string into a partition table layout
+        layout = (
+            (name, (subtype or [""])[0], numeric_arg(size))
+            for (name, *subtype, size) in split_values(value)
+        )
+        table = layouts.new_table(table, layout)
         table.check()
 
     # -a --app-size SIZE : Resize all the APP partitions
@@ -324,7 +204,7 @@ def process_arguments(arguments: str) -> None:
             table.remove(table[name])
         extension += f"-delete={value}"
 
-    # --add NAME1:SUBTYPE:OFFSET:SIZE[,NAME2,..] : Add a new partition to table
+    # --add NAME1=SUBTYPE:OFFSET:SIZE[,NAME2=..] : Add a new partition to table
     if value := args.add:
         for name, subtype, header_offset, size in split_values(value):
             table.add_part(name, subtype, numeric_arg(size), numeric_arg(header_offset))
@@ -341,62 +221,44 @@ def process_arguments(arguments: str) -> None:
     ## Write the modified partition table to a new file or flash storage on device
 
     if not args.dummy and extension:
-        if not image_file.is_device(input):
-            # Make a copy of the firmware file with new partition table
+        # Write the new partition table to the ESP32 device
+        if initial_table.app_part.offset != table.app_part.offset:
+            raise PartitionError("first app partition offset has changed", table)
+        # Make a copy of the firmware file with new partition table
+        output = args.output
+        if image.is_device:
+            output = input  # Write table back to esp32 device flash storage.
+        if not output:
             basename: str = os.path.basename(input)
-            name, suffix = basename.rsplit(".", 1)
-            output = f"{name}{extension}.{suffix}"
-            if verbose:
-                print_action(f"Writing output file: {output}...")
-                print_table(table)
-            image_file.copy_with_new_table(input, output, table)
-        else:
-            # Write the new partition table to the ESP32 device
-            if old_table.app_part.offset != table.app_part.offset:
-                raise PartitionError("first app partition offset has changed", table)
-            if verbose:
-                print_action(f"Writing new table to flash storage at {input}...")
-                print_table(table)
-            image_device.write_table(input, table)
-            # Update flash size in bootloader header if it has changed
-            update_bootloader_header(input, table)
-            # Erase any data partitions which have been moved or resized
-            oldparts, newparts = (p for p in old_table), (p for p in table)
-            p1 = next(oldparts)
-            for p2 in newparts:
-                while p1 and p1.offset < p2.offset:
-                    p1 = next(oldparts, None)
-                if p2.type_name == "data" and p1 != p2:
-                    print_action(f"Erasing data partition: {p2.name}...")
-                    image_device.erase_part(input, p2, min(p2.size, 4 * B))
-                if p2.type_name == "app":
-                    # Check there is an app at the start of the partition
-                    data = image_device.read_flash(input, p2.offset, 1 * B)
-                    if (
-                        data[: len(image_file.APP_IMAGE_MAGIC)]
-                        != image_file.APP_IMAGE_MAGIC
-                    ):
-                        print(
-                            f"Warning: app partition '{p2.name}' "
-                            f"does not contain app image."
-                        )
+            name, *suffix = basename.rsplit(".", 1)
+            output = f"{name}{extension}.{(suffix or ['bin'])[0]}"
+        if verbose:
+            what = f"{image.chip_name} device" if image.is_device else "firmware file"
+            print_action(f"Writing to {what}: {output}...")
+            layouts.print_table(table)
+        if not image.is_device:  # If input is a firmware file, make a copy and open it
+            shutil.copy(input, output)
+            image.file.close()
+            image = image_file.open_image(output)
+        # Write the new values to the firmware...
+        image_file.update_image(image, table, initial_table, verbose)
 
     # For erasing/reading/writing flash storage partitions
 
     # --erase NAME1[,NAME2,...] : Erase the partitions on the flash storage
     if value := args.erase:
-        if not image_file.is_device(input):
+        if not image.is_device:
             raise ValueError("--erase requires an esp32 device")
         for name, *_ in split_values(value):
             if verbose:
                 print_action(f"Erasing partition '{name}'...")
             if not args.dummy:
-                image_device.erase_part(input, table[name])
+                image_file.erase_part(image, table[name])
 
     # --erase-fs NAME1[,NAME2,...] : Erase the first 4 blocks of partitions
     # Micropython will automatically re-initialise the filesystem on boot.
     if value := args.erase_fs:
-        if not image_file.is_device(input):
+        if not image.is_device:
             raise ValueError("--erase-fs requires an esp32 device")
         for name, *_ in split_values(value):
             part = table[name]
@@ -404,45 +266,42 @@ def process_arguments(arguments: str) -> None:
                 raise PartitionError(f"partition '{part.name}' is not a fs partition.")
             print_action(f"Erasing filesystem on partition '{part.name}'...")
             if not args.dummy:
-                image_device.erase_part(input, part, 4 * B)
+                image_file.erase_part(image, part, 4 * B)
 
     # --read NAME1=FILE1[,NAME2=...] : Read contents of partition NAME1 into FILE
     if value := args.read:
-        if not image_file.is_device(input):
+        if not image.is_device:
             raise ValueError("--read requires an esp32 device")
         for name, filename in split_values(value):
             part = table[name]
             if verbose:
                 print_action(f"Saving partition '{name}' into '{filename}'...")
             if not args.dummy:
-                n = image_device.read_part(input, part, filename)
+                n = image_file.read_part(image, part, filename)
                 if verbose:
                     print(f"Wrote {n:#x} bytes to '{filename}'.")
 
     # --write NAME1=FILE1[,NAME2=...] : Write contents of FILE into partition NAME1
     if value := args.write:
-        if not image_file.is_device(input):
+        if not image.is_device:
             raise ValueError("--write requires an esp32 device")
         for name, filename in split_values(value):
             part = table[name]
             if verbose:
                 print_action(f"Writing partition '{name}' from '{filename}'...")
             if not args.dummy:
-                n = image_device.write_part(input, part, filename)
+                n = image_file.write_part(image, part, filename)
                 if verbose:
                     print(f"Wrote {n:#x} bytes to partition '{name}'.")
 
     # --bootloader FILE: load a new bootloader from FILE
     if value := args.bootloader:
-        if not image_file.is_device(input):
+        if not image.is_device:
             raise ValueError("--write requires an esp32 device")
         if verbose:
             print_action(f"Writing bootloader from '{value}'...")
-        bootloader_offset = (
-            0 if table.chip_name in ("esp32s3", "esp32c3") else image_file.IMAGE_OFFSET
-        )
         if not args.dummy:
-            n = image_device.write_bootloader(input, value, bootloader_offset)
+            n = image_file.write_bootloader(image, value)
             if verbose:
                 print(f"Wrote {n:#x} bytes to bootloader.")
 
