@@ -238,13 +238,12 @@ class PartitionTable(list[Part]):
         self.sort(key=lambda p: p.offset)
 
     # Change size of partition (and adjusting offsets of following parts if necessary)
-    def resize_part(self, name: str, new_size: int) -> None:
+    def resize_part(self, name: str, new_size: int) -> int:
         i = self.index(self[name])
         if new_size == 0:  # Exapnd to fill available space
             upper_limit = self[i + 1].offset if i + 1 < len(self) else self.flash_size
             new_size = upper_limit - self[i].offset
         self[i] = self[i]._replace(size=new_size)
-        print(f"Resizing {name} partition to {new_size:#x} bytes.")
         for j in range(i + 1, len(self)):
             offset = self[j - 1].offset + self[j - 1].size
             if offset > self[j].offset:  # Shift other partitions to make room
@@ -252,6 +251,7 @@ class PartitionTable(list[Part]):
             if self.flash_size < self[j].offset + self[j].size:
                 # Shrink other partitions if they overflow the flash storage
                 self[j] = self[j]._replace(size=self.flash_size - self[j].offset)
+        return new_size
 
     # Check the partition table for consistency
     # Raises PartError if any inconsistencies found.

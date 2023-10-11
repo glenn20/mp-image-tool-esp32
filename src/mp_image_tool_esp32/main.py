@@ -330,7 +330,8 @@ def process_arguments(arguments: str) -> None:
     # --resize NAME1=SIZE[,NAME2=...] : Resize partitions
     if value := args.resize:
         for name, size in split_values(value):
-            table.resize_part(name, numeric_arg(size))
+            new_size = table.resize_part(name, numeric_arg(size))
+            print_action(f"Resizing {name} partition to {new_size:#x} bytes...")
         table.check()
         extension += f"-{value}"
 
