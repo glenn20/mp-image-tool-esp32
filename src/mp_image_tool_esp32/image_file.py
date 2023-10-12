@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 
 from .common import APP_IMAGE_MAGIC, MB, B, print_action
-from .image_device import Esp32Image, EspDeviceFileWrapper, image_device_detect
+from .image_device import Esp32Image, EspDeviceFileWrapper, esp32_device_detect
 from .partition_table import BOOTLOADER_OFFSET, IMAGE_OFFSET, Part, PartitionTable
 
 # Fields in the image header
@@ -79,45 +79,49 @@ def update_bootloader_header(image: Esp32Image, flash_size: int) -> None:
     f.write(header)
 
 
-def open_image(filename: str) -> Esp32Image:
-    if is_device(filename):
-        f = EspDeviceFileWrapper(filename)
-    else:
-        f = open(filename, "r+b")
-    detected_chip_name, detected_flash_size, bootloader_offset = "", 0, 0
-    if is_device(filename):
-        detected_chip_name, detected_flash_size = image_device_detect(filename)
-        bootloader_offset = BOOTLOADER_OFFSETS[detected_chip_name]
+def open_image_device(filename: str) -> Esp32Image:
+    f = EspDeviceFileWrapper(filename)
+    detected_chip_name, detected_flash_size = esp32_device_detect(filename)
+    bootloader_offset = BOOTLOADER_OFFSETS[detected_chip_name]
     f.seek(bootloader_offset)
     chip_name, flash_size = load_bootloader_header(f)
-    if isinstance(f, EspDeviceFileWrapper):
-        if detected_chip_name and detected_chip_name != chip_name:
-            print(
-                f"Warning: Detected chip ({detected_chip_name})"
-                f" is different from bootloader ({chip_name})."
-            )
-        if detected_flash_size and detected_flash_size != flash_size:
-            print(
-                f"Warning: Detected flash size ({detected_flash_size // MB}MB)"
-                f" is different from bootloader ({flash_size // MB}MB)."
-            )
-        f.end = flash_size
-        offset = 0  # No offset required for device files
-        app_size = 0  # Unknown app size
-    else:
-        offset = IMAGE_OFFSETS[chip_name]
-        # Get app size from the size of the file. TODO: Should use app_part.offset
-        app_size = f.seek(0, 2) - PartitionTable.APP_PART_OFFSET + offset
+    f.end = flash_size
+    offset = 0  # No offset required for device files
+    app_size = 0  # Unknown app size
+    if detected_chip_name and detected_chip_name != chip_name:
+        print(
+            f"Warning: Detected chip ({detected_chip_name})"
+            f" is different from bootloader ({chip_name})."
+        )
+    if detected_flash_size and detected_flash_size != flash_size:
+        print(
+            f"Warning: Detected flash size ({detected_flash_size // MB}MB)"
+            f" is different from bootloader ({flash_size // MB}MB)."
+        )
+    return Esp32Image(
+        f, chip_name, flash_size, app_size, offset, bootloader_offset, True
+    )
+
+
+def open_image_file(filename: str) -> Esp32Image:
+    bootloader_offset = 0
+    f = open(filename, "r+b")
+    f.seek(bootloader_offset)
+    chip_name, flash_size = load_bootloader_header(f)
+    offset = IMAGE_OFFSETS[chip_name]
+    # Get app size from the size of the file. TODO: Should use app_part.offset
+    app_size = f.seek(0, 2) - PartitionTable.APP_PART_OFFSET + offset
     f.seek(0)
     return Esp32Image(
-        f,
-        chip_name,
-        flash_size,
-        app_size,
-        offset,
-        bootloader_offset,
-        is_device(filename),
+        f, chip_name, flash_size, app_size, offset, bootloader_offset, False
     )
+
+
+def open_image(filename: str) -> Esp32Image:
+    if is_device(filename):
+        return open_image_device(filename)
+    else:
+        return open_image_file(filename)
 
 
 # Load an image file and check the partition table
@@ -150,7 +154,7 @@ def write_table(image: Esp32Image, table: PartitionTable) -> None:
 def erase_part(image: Esp32Image, part: Part, size: int = 0) -> None:
     f = image.file
     if isinstance(f, EspDeviceFileWrapper):
-        f.erase(part.offset, part.size)
+        f.erase(part.offset, (size or part.size))
     else:
         f.seek(part.offset - image.offset)
         f.write(b"\xff" * (size or part.size))
@@ -176,7 +180,7 @@ def write_part(image: Esp32Image, part: Part, input: str) -> int:
     return f.write(Path(input).read_bytes())
 
 
-# Write data from a file to a partition on device
+# Write data from a file to the bootloader on the device
 def write_bootloader(image: Esp32Image, input: str) -> int:
     size, max_size = os.path.getsize(input), PartitionTable.BOOTLOADER_SIZE
     if max_size < size:
@@ -194,12 +198,12 @@ def update_partitions(
     old_table: PartitionTable,
     verbose: bool = True,
 ) -> None:
-    # Erase any data partitions which have been moved or resized
-    oldparts, newparts = (p for p in old_table), (p for p in new_table)
-    oldp = next(oldparts)
+    """Erase any data partitions which have been moved or resized."""
     f = image.file
     f.seek(0, 2)
     end_of_file = f.tell()
+    oldparts, newparts = (p for p in old_table), (p for p in new_table)
+    oldp = next(oldparts)
     for newp in newparts:
         while oldp and oldp.offset < newp.offset:
             oldp = next(oldparts, None)

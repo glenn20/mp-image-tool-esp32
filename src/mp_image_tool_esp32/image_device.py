@@ -1,6 +1,5 @@
 # MIT License: Copyright (c) 2023 @glenn20
 
-import functools
 import io
 import os
 import re
@@ -25,12 +24,6 @@ class Esp32Image:
     offset: int
     bootloader_offset: int
     is_device: bool
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, e_t, e_v, e_tr):
-        self.file.close()
 
 
 # Use shell commands to run esptool.py to read and write from flash storage on
@@ -128,9 +121,8 @@ class EspDeviceFileWrapper(io.RawIOBase):
         erase_flash(self.port, offset, size)
 
 
-@functools.cache
-def image_device_detect(device: str) -> tuple[str, int]:
-    """Auto detect the chip_name, flash_size and bootloader offset."""
+def esp32_device_detect(device: str) -> tuple[str, int]:
+    """Auto detect the chip_name and flash_size."""
     if not os.path.exists(device):
         raise FileNotFoundError(f"No such device: '{device}'")
     output = esptool(device, "flash_id").decode()

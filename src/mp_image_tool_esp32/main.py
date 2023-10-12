@@ -305,6 +305,8 @@ def process_arguments(arguments: str) -> None:
             if verbose:
                 print(f"Wrote {n:#x} bytes to bootloader.")
 
+    image.file.close()
+
 
 def main() -> int:
     colorama_init()
