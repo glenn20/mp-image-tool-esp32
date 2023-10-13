@@ -25,8 +25,9 @@ Micropython app fills 78.8% of factory partition (421 kB free)
 
 `mp-image-tool-esp32` can:
 
-- print a summary of the partition table of a micropython esp32 firmware file or device
-  - `mp-image-tool-esp32 ESP32_GENERIC-20230426-v1.20.0.bin`
+- print a summary of the partition table of a micropython esp32 firmware file or
+  device
+  - `mp-image-tool-esp32 ESP32_GENERIC-20231005-v1.21.0.bin`
 - change the size of the flash storage for the firmware file:
   - `--resize-flash 8M` or `-f 8M`
 - rewrite or modify the partition table:
@@ -39,7 +40,8 @@ Micropython app fills 78.8% of factory partition (421 kB free)
     use free space.
   - `--add vfs2=fat:2M:1M` : add a new FS data partition at offset 0x200000 with
     size 0x100000
-  - `--app-size 0x200000` : change the size of the partitions which hold the micropython app firmware
+  - `--app-size 0x200000` : change the size of the partitions which hold the
+    micropython app firmware
 - extract the micropython application image (`.app-bin`) from the firmware file
   - `--extract-app`
 
@@ -56,9 +58,10 @@ it will print the partition table of `filename`.
   - `--resize-flash`, `--table`, `--delete`, `--add`, `--resize` and
     `--app-size` (as above)
 - modify the contents of partitions on the flash storage:
-  - `--read-part factory=micropython.app-bin,nvs=nvs.bin` : read contents of partitions
-    into files
-  - `--write-part factory=micropython.app-bin` : write contents of files into partitions
+  - `--read-part factory=micropython.app-bin,nvs=nvs.bin` : read contents of
+    partitions into files
+  - `--write-part factory=micropython.app-bin` : write contents of files into
+    partitions
   - `--erase-part nvs,otadata` : erase partitions
     - micropython automatically re-inits 'nvs' and 'otadata' partitions after
       being erased
@@ -235,9 +238,9 @@ positional arguments:
   filename              the esp32 firmware image filename or serial device
 
 options:
+  -o --output           output filename
   -h, --help            show this help message and exit
   -q, --quiet           mute program output
-  -n, --dummy           no output file
   -d, --debug           print additional info
   -x, --extract-app     extract .app-bin from firmware
   -f SIZE, --flash-size SIZE

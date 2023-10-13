@@ -6,7 +6,7 @@ import csv
 import hashlib
 import struct
 from functools import cached_property
-from typing import NamedTuple, SupportsIndex
+from typing import Any, Iterable, NamedTuple
 
 from .common import KB, MB
 
@@ -29,7 +29,7 @@ SUBTYPES: dict[str, tuple[int, int]] = {
     "phy": (1, 1),
     "nvs": (1, 2),
     "fat": (1, 129),
-} | {f"ota_{i}": (0, i + 16) for i in range(16)}
+} | {f"ota_{i}": (int(0), i + 16) for i in range(16)}
 TYPE_TO_NAME = {0: "app", 1: "data"}
 NAME_TO_TYPE = {type: name for name, type in TYPE_TO_NAME.items()}
 SUBTYPE_TO_NAME = {types: name for name, types in SUBTYPES.items()}
@@ -45,7 +45,11 @@ PART_NAME_LEN = 16  # Length of the Partition label
 class PartitionError(Exception):
     "Raised if an error occurs while reading or building a PartitionTable."
 
-    def __init__(self, msg: str = "Error in partition table.", table=None):
+    def __init__(
+        self,
+        msg: str = "Error in partition table.",
+        table: PartitionTable | None = None,
+    ):
         super().__init__(msg)
         self.table = table
 
@@ -61,7 +65,7 @@ class PartTuple(NamedTuple):
 
 
 # My convenient form of itertools.takewhile()
-def while_true(iterable):
+def while_true(iterable: Iterable[Any]):
     for x in iterable:
         if not x:
             break
@@ -108,28 +112,14 @@ class PartitionTable(list[Part]):
         self.flash_size = flash_size
         self.chip_name = chip_name
         self.app_size = 0
-        self.offset = 0
 
-    # Can index by name (str) as well as by position in list (int)
-    def __getitem__(self, key: int | str) -> Part:
-        if not isinstance(key, str):
-            return super().__getitem__(key)  # Delegate to list method
-        if (p := next((p for p in self if p.name == key), None)) is None:
-            raise PartitionError(f"Partition {key} not found.", self)
-        return p
-
-    def __setitem__(self, key: SupportsIndex | str, part: Part):
-        index = (
-            next((i for i, p in enumerate(self) if p.name == key), None)
-            if isinstance(key, str)
-            else key
-        )
-        if index is None:
-            raise PartitionError(f"Partition {key} not found.", self)
-        super().__setitem__(index, part)
-
-    def by_name(self, name: str) -> Part | None:
+    def find(self, name: str) -> Part | None:
         return next((p for p in self if p.name == name), None)
+
+    def by_name(self, name: str) -> Part:
+        if (p := self.find(name)) is None:
+            raise PartitionError(f"Partition {name} not found.", self)
+        return p
 
     def print(self) -> None:
         print(
@@ -178,7 +168,6 @@ class PartitionTable(list[Part]):
         self.sort(key=lambda p: p.offset)
         if not self.flash_size:  # Infer flash size from partition table
             self.flash_size = self[-1].offset + self[-1].size
-            self.offset = self.flash_size
         self.check()
         return self
 
@@ -200,8 +189,10 @@ class PartitionTable(list[Part]):
         self.clear()
         with open(filename, newline="") as f:
             reader = csv.reader((s for s in f if s[0] != "#"), skipinitialspace=True)
-            for name, type, subtype, offset, size, flags in reader:
-                self.add_part(name, subtype, int(size, 0), int(offset, 0))
+            for name, _, subtype, offset, size, flags in reader:
+                self.add_part(
+                    name, subtype, int(size, 0), int(offset, 0), int(flags, 0)
+                )
         self.check()
         return self
 
@@ -222,9 +213,9 @@ class PartitionTable(list[Part]):
         offset: int = 0,
         flags: int = 0,
     ) -> None:
-        if not self.offset:
-            self.offset = self.FIRST_PART_OFFSET
-        offset = offset or self.offset
+        if any(p for p in self if p.name == name):
+            raise PartitionError(f"Partition '{name}' already exists in table.")
+        offset = max([p.offset + p.size for p in self] + [self.FIRST_PART_OFFSET])
         if offset + size > self.flash_size:
             raise PartitionError(
                 f"No room on flash for partition {name} ({size:#x} bytes).", self
@@ -234,12 +225,12 @@ class PartitionTable(list[Part]):
         namebytes = name.encode()
         namebytes = namebytes + b"\x00" * (PART_NAME_LEN - len(namebytes))
         self.append(Part(PART_MAGIC, type, subtype, offset, size, namebytes, flags))
-        self.offset += size
         self.sort(key=lambda p: p.offset)
 
     # Change size of partition (and adjusting offsets of following parts if necessary)
     def resize_part(self, name: str, new_size: int) -> int:
-        i = self.index(self[name])
+        i = self.index(self.by_name(name))
+        i = [p.name for p in self].index(name)
         if new_size == 0:  # Exapnd to fill available space
             upper_limit = self[i + 1].offset if i + 1 < len(self) else self.flash_size
             new_size = upper_limit - self[i].offset
@@ -309,7 +300,3 @@ class PartitionTable(list[Part]):
                 f" is too small for micropython app ({self.app_size:#x} bytes).",
                 self,
             )
-
-    def clear(self) -> None:
-        super().clear()
-        self.offset = 0

@@ -8,9 +8,8 @@ import time
 from dataclasses import dataclass
 from tempfile import NamedTemporaryFile
 
-from .common import MB, print_error
+from .common import MB, debug, error
 
-debug = False  # If True, print the esptool.py commands and output
 esptool_args = "--baud 460800"  # Default arguments for the esptool.py commands
 
 
@@ -51,7 +50,7 @@ def esptool(port: str, command: str) -> bytes:
             if "set --after option to 'no_reset'" in err.stdout.decode():
                 esptool_args += " --after no_reset"
             if i == 0:
-                print_error(f"Error: {err.cmd} returns error {err.returncode}.")
+                error(f"Error: {err.cmd} returns error {err.returncode}.")
                 if err.stderr:
                     print(err.stderr.decode())
                 if err.stdout:
@@ -78,11 +77,12 @@ def read_flash(filename: str, offset: int, size: int) -> bytes:
 # Write bytes to the device flash storage using esptool.py
 # Offset should be a multiple of 0x1000 (4096), the device block size
 def write_flash(filename: str, offset: int, data: bytes) -> int:
+    mv = memoryview(data)
     with NamedTemporaryFile("w+b", prefix="mp-image-tool-esp32-") as f:
         f.write(data)
         f.flush()
         esptool(filename, f"write_flash -z {offset:#x} {f.name}")
-    return len(data)
+    return len(mv)
 
 
 # A virtual file-like wrapper around the flash storage on an esp32 device
@@ -95,13 +95,13 @@ class EspDeviceFileWrapper(io.RawIOBase):
     def read(self, nbytes: int = 0x1000) -> bytes:
         return read_flash(self.port, self.pos, nbytes)
 
-    def readinto(self, data: bytearray) -> int:
+    def readinto(self, data: bytes) -> int:  # type: ignore
         mv = memoryview(data)
-        b = read_flash(self.port, self.pos, len(data))
+        b = read_flash(self.port, self.pos, len(mv))
         mv[: len(b)] = b
         return len(b)
 
-    def write(self, data: bytes) -> int:
+    def write(self, data: bytes) -> int:  # type: ignore
         return write_flash(self.port, self.pos, data)
 
     def seek(self, pos: int, whence: int = 0):

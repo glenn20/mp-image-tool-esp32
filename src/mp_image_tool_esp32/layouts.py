@@ -32,23 +32,26 @@ default_subtype: dict[str, str] = {
     "phy_init": "phy",
 }
 
+
 # Return the recommended OTA app part size (depends on flash_size)
 def ota_part_size(flash_size: int) -> int:
     return next(part_size for fsize, part_size in OTA_PART_SIZES if flash_size > fsize)
+
+
+def check_subtype(name: str, subtype: str) -> str:
+    return subtype or default_subtype.get(name, name)
 
 
 # Build a new partition table from the provided layout.
 # If subtype is "", infer subtype from name (label).
 def new_table(
     table: PartitionTable,
-    table_layout: Iterable[tuple[str, str, int]],
+    table_layout: Iterable[tuple[str, str, int, int]],
 ) -> PartitionTable:
     table.clear()  # Empty the partition table
-    for name, *subtype, size in table_layout:
-        subtype = (
-            subtype[0] if subtype and subtype[0] else default_subtype.get(name, name)
-        )
-        table.add_part(name, subtype, size)
+    for name, *subtype, offset, size in table_layout:
+        subtype = check_subtype(name, subtype[0] if subtype else "")
+        table.add_part(name, subtype, size, offset)
     return table
 
 
@@ -72,7 +75,7 @@ def make_ota_layout(
 
 # Provide a detailed printout of the partition table
 def print_table(table: PartitionTable) -> None:
-    colors = dict(c=Fore.CYAN, r=Fore.RED, _=Fore.RESET)
+    colors = dict(c=Fore.CYAN, r=Fore.RED)
 
     print(Fore.CYAN, end="")
     print(

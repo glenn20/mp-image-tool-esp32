@@ -7,11 +7,12 @@ import math
 import os
 from pathlib import Path
 
-from .common import APP_IMAGE_MAGIC, MB, B, print_action
+from .common import MB, B, info
 from .image_device import Esp32Image, EspDeviceFileWrapper, esp32_device_detect
 from .partition_table import BOOTLOADER_OFFSET, IMAGE_OFFSET, Part, PartitionTable
 
 # Fields in the image header
+APP_IMAGE_MAGIC = b"\xe9"  # Starting bytes for firmware files
 HEADER_SIZE = 8 + 16  # Size of the image file headers
 FLASH_SIZE_OFFSET = 3  # Flash size is in high 4 bits of byte 3 in file
 CHIP_ID_OFFSET = 12  # Chip-type is in bytes 12 and 13 of file
@@ -46,7 +47,7 @@ def is_device(filename: str) -> bool:
 
 
 def load_bootloader_header(f: io.IOBase) -> tuple[str, int]:
-    header = f.read(HEADER_SIZE)
+    header: bytes = f.read(HEADER_SIZE)
     if not header.startswith(APP_IMAGE_MAGIC):
         raise ValueError(f"Firmware magic byte ({APP_IMAGE_MAGIC}) not found at byte 0")
     chip_id = header[CHIP_ID_OFFSET] | (header[CHIP_ID_OFFSET + 1] << 8)
@@ -117,7 +118,7 @@ def open_image_file(filename: str) -> Esp32Image:
     )
 
 
-def open_image(filename: str) -> Esp32Image:
+def open_esp32_image(filename: str) -> Esp32Image:
     if is_device(filename):
         return open_image_device(filename)
     else:
@@ -196,7 +197,6 @@ def update_partitions(
     image: Esp32Image,
     new_table: PartitionTable,
     old_table: PartitionTable,
-    verbose: bool = True,
 ) -> None:
     """Erase any data partitions which have been moved or resized."""
     f = image.file
@@ -208,8 +208,7 @@ def update_partitions(
         while oldp and oldp.offset < newp.offset:
             oldp = next(oldparts, None)
         if newp.type_name == "data" and oldp != newp and newp.offset < end_of_file:
-            if verbose:
-                print_action(f"Erasing data partition: {newp.name}...")
+            info(f"Erasing data partition: {newp.name}...")
             erase_part(image, newp, min(newp.size, 4 * B))
         if newp.type_name == "app" and newp.offset < end_of_file:
             # Check there is an app at the start of the partition
@@ -226,13 +225,10 @@ def update_image(
     image: Esp32Image,
     table: PartitionTable,
     initial_table: PartitionTable,
-    verbose: bool = True,
 ) -> None:
-    if verbose:
-        print_action("Writing partition table...")
+    info("Writing partition table...")
     write_table(image, table)
     if table.flash_size != image.flash_size:
-        if verbose:
-            print_action(f"Writing flash_size={table.flash_size} to bootloader...")
+        info(f"Setting flash_size in bootloader to {table.flash_size//MB}MB...")
         update_bootloader_header(image, table.flash_size)
-    update_partitions(image, table, initial_table, verbose)
+    update_partitions(image, table, initial_table)
