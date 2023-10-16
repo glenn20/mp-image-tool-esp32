@@ -9,7 +9,6 @@ import re
 import shutil
 
 from colorama import init as colorama_init
-
 from mp_image_tool_esp32.image_device import Esp32Image
 
 from . import common, image_file, layouts, parse_args
@@ -187,7 +186,7 @@ def process_arguments() -> None:
 
     if args.add:  # --add NAME1=SUBTYPE:OFFSET:SIZE[,..] : Add new partitions
         for name, subtype, offset, size in args.add:
-            subtype = layouts.check_subtype(name, subtype)
+            subtype = layouts.get_subtype(name, subtype)
             table.add_part(name, subtype, size, offset)
         extension += f"-add={parse_args.unsplit(args.add)}"
 

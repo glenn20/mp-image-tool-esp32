@@ -13,21 +13,22 @@ from .common import MB, debug, error
 esptool_args = "--baud 460800"  # Default arguments for the esptool.py commands
 
 
-# A class to hold information about an esp32 firmware file or device
 @dataclass
 class Esp32Image:
+    """A class to hold information about an esp32 firmware file or device"""
+
     file: io.IOBase
     chip_name: str
     flash_size: int
     app_size: int
-    offset: int
-    bootloader_offset: int
+    offset: int  # Esp32 and S2 firmware files have a global offset of 0x1000
+    bootloader_offset: int  # Offset of bootloader: esp32/s2=0x1000 else 0
     is_device: bool
 
 
-# Use shell commands to run esptool.py to read and write from flash storage on
-# esp32 devices.
 def shell(command: str) -> bytes:
+    """Use shell commands to run `esptool.py` to read and write from flash
+    storage on esp32 devices."""
     if debug:
         print("$", command)
     result = subprocess.run(command, capture_output=True, check=True, shell=True)
@@ -37,8 +38,8 @@ def shell(command: str) -> bytes:
     return result.stdout
 
 
-# Convenience function for calling an esptool.py command.
 def esptool(port: str, command: str) -> bytes:
+    """Convenience function for calling an esptool.py command."""
     # Keep trying for up to 5 seconds. On some devices, we need to wait up to
     # 0.6 seconds for serial port to be ready after previous commands (eg.
     # esp32s2).
@@ -60,23 +61,23 @@ def esptool(port: str, command: str) -> bytes:
     return b""
 
 
-# Read bytes from the device flash storage using esptool.py
-# Offset should be a multiple of 0x1000 (4096), the device block size
 def erase_flash(filename: str, offset: int, size: int) -> None:
+    """Read bytes from the device flash storage using `esptool.py`.
+    Offset should be a multiple of 0x1000 (4096), the device block size"""
     esptool(filename, f"erase_region {offset:#x} {size:#x}")
 
 
-# Read bytes from the device flash storage using esptool.py
-# Offset should be a multiple of 0x1000 (4096), the device block size
 def read_flash(filename: str, offset: int, size: int) -> bytes:
+    """Read bytes from the device flash storage using esptool.py
+    Offset should be a multiple of 0x1000 (4096), the device block size"""
     with NamedTemporaryFile("w+b", prefix="mp-image-tool-esp32-") as f:
         esptool(filename, f"read_flash {offset:#x} {size:#x} {f.name}")
         return f.read()
 
 
-# Write bytes to the device flash storage using esptool.py
-# Offset should be a multiple of 0x1000 (4096), the device block size
 def write_flash(filename: str, offset: int, data: bytes) -> int:
+    """Write bytes to the device flash storage using `esptool.py`
+    Offset should be a multiple of 0x1000 (4096), the device block size"""
     mv = memoryview(data)
     with NamedTemporaryFile("w+b", prefix="mp-image-tool-esp32-") as f:
         f.write(data)
@@ -85,8 +86,11 @@ def write_flash(filename: str, offset: int, data: bytes) -> int:
     return len(mv)
 
 
-# A virtual file-like wrapper around the flash storage on an esp32 device
 class EspDeviceFileWrapper(io.RawIOBase):
+    """A virtual file-like wrapper around the flash storage on an esp32 device.
+    This allows the device to be used as a file-like object for reading and
+    writing."""
+
     def __init__(self, name: str):
         self.port = name
         self.pos = 0
@@ -122,7 +126,8 @@ class EspDeviceFileWrapper(io.RawIOBase):
 
 
 def esp32_device_detect(device: str) -> tuple[str, int]:
-    """Auto detect the chip_name and flash_size."""
+    """Auto detect and return (as a tuple) the `chip_name` and `flash_size`
+    attached to `device`."""
     if not os.path.exists(device):
         raise FileNotFoundError(f"No such device: '{device}'")
     output = esptool(device, "flash_id").decode()

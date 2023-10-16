@@ -55,6 +55,8 @@ class PartitionError(Exception):
 
 
 class PartTuple(NamedTuple):
+    """An entry in the partition table."""
+
     magic: bytes
     type: int
     subtype: int
@@ -75,31 +77,36 @@ def while_true(iterable: Iterable[Any]):
 class Part(PartTuple):
     @staticmethod
     def from_bytes(data: bytes) -> Part | None:
+        """Return a `Part` built from `data`, which is an entry in the partition
+        table or `None` if not a valid partition."""
         tuple = list(struct.unpack(PART_FMT, data))
         return Part(*tuple) if tuple[0] == PART_MAGIC else None
 
     def to_bytes(self) -> bytes:
+        """Save the partition as an entry in a partition table in firmware."""
         return struct.pack(PART_FMT, *self)
 
-    # Return the partition type name
     @cached_property
     def name(self) -> str:
+        """Return the partition name as a string."""
         return self.label.rstrip(b"\x00").decode()
 
-    # Return the partition type name
     @cached_property
     def type_name(self) -> str:
+        """Return the name of the partition type (`"app"` or `"data"`)."""
         return TYPE_TO_NAME.get(self.type, str(self.type))
 
     # Return the partition subtype name (or the subtype number as a str)
     @cached_property
     def subtype_name(self) -> str:
+        """Return the name of the partition subtype as a string."""
         return SUBTYPE_TO_NAME.get((self.type, self.subtype), str(self.subtype))
 
 
 class PartitionTable(list[Part]):
-    # Copy the default flash layout values (may be overridden by instances if
-    # required)
+    """A class to hold a list of partitions (`Part`) in a partition table."""
+
+    # Copy the default flash layout values
     BOOTLOADER_OFFSET = BOOTLOADER_OFFSET
     BOOTLOADER_SIZE = BOOTLOADER_SIZE
     PART_TABLE_OFFSET = PART_TABLE_OFFSET
@@ -113,11 +120,11 @@ class PartitionTable(list[Part]):
         self.chip_name = chip_name
         self.app_size = 0
 
-    def find(self, name: str) -> Part | None:
+    def by_name_maybe(self, name: str) -> Part | None:
         return next((p for p in self if p.name == name), None)
 
     def by_name(self, name: str) -> Part:
-        if (p := self.find(name)) is None:
+        if (p := self.by_name_maybe(name)) is None:
             raise PartitionError(f"Partition {name} not found.", self)
         return p
 
@@ -140,7 +147,8 @@ class PartitionTable(list[Part]):
             )
 
     def from_bytes(self, data: bytes) -> PartitionTable:
-        # Build the partition table from the records in "data"
+        """Build the partition table from the records in `data` where `data`
+        is a partition table from an ESP32 firmware file or device."""
         size = min(len(data), PART_TABLE_SIZE) - PART_LEN
         self.extend(
             while_true(
@@ -172,6 +180,7 @@ class PartitionTable(list[Part]):
         return self
 
     def to_bytes(self) -> bytes:
+        """Save the partition table in firmware format."""
         data = b"".join((p.to_bytes() for p in self))
         md5 = hashlib.md5(data).digest()
         data = b"".join(
@@ -186,6 +195,7 @@ class PartitionTable(list[Part]):
         return data
 
     def from_csv(self, filename: str) -> PartitionTable:
+        """Load the partiton table from a CSV file."""
         self.clear()
         with open(filename, newline="") as f:
             reader = csv.reader((s for s in f if s[0] != "#"), skipinitialspace=True)
@@ -196,23 +206,38 @@ class PartitionTable(list[Part]):
         self.check()
         return self
 
-    # Find the first app partition offset.
     @property
     def app_part(self) -> Part:
+        """Find the first app partition in the table."""
         part = next(filter(lambda p: p.type_name == "app", self), None)
         if not part:
             raise PartitionError("No app partition found in table.", self)
         return part
 
-    # Add a partition to the table
     def add_part(
         self,
         name: str,
         subtype_name: str,
-        size: int,  # If size==0, use all space left in the flash
+        size: int,
         offset: int = 0,
         flags: int = 0,
     ) -> None:
+        """Add a new partition to the partition table.
+
+        If `offset` is 0, set offset to first available free space. If `size` is
+        0 expand the size to fill the available free space.
+
+        Args:
+            name (str): The name (label) of the partition.
+            subtype_name (str): Name of the subtype of the partition.
+            size (int): Size of the partition in bytes.
+            offset (int, optional): Offset of the partition in bytes. Defaults to 0.
+            flags (int, optional): Flags of the partition. Defaults to 0.
+
+        Raises:
+            PartitionError: If the partition overlaps with another partition or
+                there is no room on the flash storage.
+        """
         if any(p for p in self if p.name == name):
             raise PartitionError(f"Partition '{name}' already exists in table.")
         offset = max([p.offset + p.size for p in self] + [self.FIRST_PART_OFFSET])
@@ -222,13 +247,15 @@ class PartitionTable(list[Part]):
             )
         size = size or (self.flash_size - offset)
         type, subtype = SUBTYPES[subtype_name]
-        namebytes = name.encode()
-        namebytes = namebytes + b"\x00" * (PART_NAME_LEN - len(namebytes))
-        self.append(Part(PART_MAGIC, type, subtype, offset, size, namebytes, flags))
+        label = name.encode().ljust(PART_NAME_LEN, b"\x00")
+        self.append(Part(PART_MAGIC, type, subtype, offset, size, label, flags))
         self.sort(key=lambda p: p.offset)
 
-    # Change size of partition (and adjusting offsets of following parts if necessary)
     def resize_part(self, name: str, new_size: int) -> int:
+        """Change size of partition (and adjusting offsets of following parts if
+        necessary). If new_size is 0, expand to fill available space.
+
+        Returns the new size of the partition."""
         i = self.index(self.by_name(name))
         i = [p.name for p in self].index(name)
         if new_size == 0:  # Exapnd to fill available space
@@ -244,9 +271,9 @@ class PartitionTable(list[Part]):
                 self[j] = self[j]._replace(size=self.flash_size - self[j].offset)
         return new_size
 
-    # Check the partition table for consistency
-    # Raises PartError if any inconsistencies found.
     def check(self) -> None:
+        """Check the partition table for consistency.
+        Raises `PartError` if any inconsistencies found."""
         offset = self.FIRST_PART_OFFSET
         names: set[str] = set()
         self.sort(key=lambda p: p.offset)

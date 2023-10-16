@@ -33,34 +33,37 @@ default_subtype: dict[str, str] = {
 }
 
 
-# Return the recommended OTA app part size (depends on flash_size)
 def ota_part_size(flash_size: int) -> int:
+    """Calculate and return the recommended OTA app part size (in bytes) for the
+    given flash_size."""
     return next(part_size for fsize, part_size in OTA_PART_SIZES if flash_size > fsize)
 
 
-def check_subtype(name: str, subtype: str) -> str:
+def get_subtype(name: str, subtype: str) -> str:
+    """Return subtype if it is not empty, else infer subtype from name."""
     return subtype or default_subtype.get(name, name)
 
 
-# Build a new partition table from the provided layout.
-# If subtype is "", infer subtype from name (label).
 def new_table(
     table: PartitionTable,
     table_layout: Iterable[tuple[str, str, int, int]],
 ) -> PartitionTable:
+    """Build a new partition table from the provided layout.
+    For each tuple, if subtype is `""`, infer `subtype` from name."""
     table.clear()  # Empty the partition table
     for name, *subtype, offset, size in table_layout:
-        subtype = check_subtype(name, subtype[0] if subtype else "")
+        subtype = get_subtype(name, subtype[0] if subtype else "")
         table.add_part(name, subtype, size, offset)
     return table
 
 
-# Build a new OTA-enabled partition table for the given flash size and app
-# partition size.
 def make_ota_layout(
     table: PartitionTable,
     app_part_size: int = 0,  # Size of the partition to hold the app (bytes)
 ) -> str:
+    """Build a layout for a new OTA-enabled partition table for the given flash
+    size and app_part_size. If app_part_size is 0, use the recommended size for
+    the flash size."""
     flash_size = table.flash_size
     if not app_part_size:
         app_part_size = ota_part_size(flash_size)
@@ -73,8 +76,8 @@ def make_ota_layout(
     )
 
 
-# Provide a detailed printout of the partition table
 def print_table(table: PartitionTable) -> None:
+    """Print a detailed description of the partition table."""
     colors = dict(c=Fore.CYAN, r=Fore.RED)
 
     print(Fore.CYAN, end="")
