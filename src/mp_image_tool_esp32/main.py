@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
-
 # MIT License: Copyright (c) 2023 @glenn20
+"""Main program module for mp-image-tool-esp32: a tool for manipulating ESP32
+firmware files and flash storage on ESP32 devices.
+
+After importing, call `main.main()` to execute the program.
+
+Dependencies:
+- `colorama` for colour terminal support,
+- `esptool.py` for access to flash storage on serial-attached ESP32 devices.
+"""
 
 import argparse
 import copy
@@ -9,10 +17,10 @@ import re
 import shutil
 
 from colorama import init as colorama_init
-from mp_image_tool_esp32.image_device import Esp32Image
 
 from . import common, image_file, layouts, parse_args
 from .common import KB, MB, B, error, info, vprint
+from .image_file import Esp32Image
 from .partition_table import NAME_TO_TYPE, PartitionError, PartitionTable
 
 # Convenient type aliases for static type checking of arguments
@@ -30,7 +38,7 @@ PartList = list[tuple[str, str, int, int]]
 #    `argparse.add_argument()` which also makes the command usage much easier
 #    for humans to parse from the code.
 #
-# `TypedNamespace` must include a field for each (non-`str`) command option
+# `TypedNamespace` must include a field for each (non-`str`) optional argument
 # (prefixed with "-") provided in the `usage` string.
 #
 # The `type_mapper` field is used to provide type conversion functions that
@@ -150,12 +158,12 @@ def process_arguments() -> None:
         extension += f"-{args.flash_size // MB}MB"
 
     if args.from_csv:  # --from-csv FILE : Replace part table from CSV file.
-        table.from_csv(args.from_csv)
+        table = layouts.from_csv(table, args.from_csv)
         extension += "-CSV"
 
     if args.table:  # --table nvs=7B,factory=2M,vfs=0
         if args.table == [("ota", "", 0, 0)]:
-            args.table = parse_args.partlist(layouts.make_ota_layout(table))
+            args.table = parse_args.partlist(layouts.ota_layout(table, args.app_size))
             extension += "-OTA"
         elif args.table == [("default", "", 0, 0)]:
             args.table = parse_args.partlist(layouts.DEFAULT_TABLE_LAYOUT)

@@ -1,19 +1,25 @@
 # MIT License: Copyright (c) 2023 @glenn20
+"""Provides classes and methods to read, write, construct and manipulate
+partition tables in ESP32 firmware files and flash storage on ESP32 devices.
 
+Provides the:
+- `PartitionTable` class to represent a partition table and the
+- `Part` class to represent a partition in the table.
+
+Both classes include `from_bytes()` and `to_bytes()` methods to read and
+write from binary partiton tables in firmware files and devices.
+"""
 from __future__ import annotations
 
-import csv
 import hashlib
 import struct
 from functools import cached_property
-from typing import Any, Iterable, NamedTuple
+from typing import Generator, NamedTuple
 
 from .common import KB, MB
 
 # The default layout in flash storage on device
 FLASH_SIZE = 0x400_000  # Defaults size of flash storage (4 Megabytes)
-IMAGE_OFFSET = 0x1000  # Offset in flash to write firmware (set to 0 on S3 and C2)
-BOOTLOADER_OFFSET = 0x1_000  # Offset of Bootloader in flash storage (bytes)
 BOOTLOADER_SIZE = 0x7_000  # Size allowed for Bootloader in flash
 PART_TABLE_OFFSET = 0x8_000  # Offset of the partition table in flash
 PART_TABLE_SIZE = 0x1_000  # Size of the partition table
@@ -66,21 +72,16 @@ class PartTuple(NamedTuple):
     flags: int
 
 
-# My convenient form of itertools.takewhile()
-def while_true(iterable: Iterable[Any]):
-    for x in iterable:
-        if not x:
-            break
-        yield x
-
-
 class Part(PartTuple):
     @staticmethod
     def from_bytes(data: bytes) -> Part | None:
         """Return a `Part` built from `data`, which is an entry in the partition
         table or `None` if not a valid partition."""
-        tuple = list(struct.unpack(PART_FMT, data))
-        return Part(*tuple) if tuple[0] == PART_MAGIC else None
+        return (
+            Part(*struct.unpack(PART_FMT, data))
+            if data.startswith(PART_MAGIC)
+            else None
+        )
 
     def to_bytes(self) -> bytes:
         """Save the partition as an entry in a partition table in firmware."""
@@ -107,7 +108,6 @@ class PartitionTable(list[Part]):
     """A class to hold a list of partitions (`Part`) in a partition table."""
 
     # Copy the default flash layout values
-    BOOTLOADER_OFFSET = BOOTLOADER_OFFSET
     BOOTLOADER_SIZE = BOOTLOADER_SIZE
     PART_TABLE_OFFSET = PART_TABLE_OFFSET
     PART_TABLE_SIZE = PART_TABLE_SIZE
@@ -120,11 +120,11 @@ class PartitionTable(list[Part]):
         self.chip_name = chip_name
         self.app_size = 0
 
-    def by_name_maybe(self, name: str) -> Part | None:
+    def find(self, name: str) -> Part | None:
         return next((p for p in self if p.name == name), None)
 
     def by_name(self, name: str) -> Part:
-        if (p := self.by_name_maybe(name)) is None:
+        if (p := self.find(name)) is None:
             raise PartitionError(f"Partition {name} not found.", self)
         return p
 
@@ -146,21 +146,24 @@ class PartitionTable(list[Part]):
                 f" {size_str:>10s}"
             )
 
-    def from_bytes(self, data: bytes) -> PartitionTable:
+    @staticmethod
+    def _parts_from_bytes(data: bytes) -> Generator[Part, None, None]:
+        """Yield `Part`s from `data`, which is a partition table in firmware."""
+        for i in range(0, max(len(data), PART_TABLE_SIZE) - PART_LEN, PART_LEN):
+            if p := Part.from_bytes(data[i : i + PART_LEN]):
+                yield p
+            else:
+                return
+
+    def from_bytes(self, data: bytes) -> None:
         """Build the partition table from the records in `data` where `data`
         is a partition table from an ESP32 firmware file or device."""
-        size = min(len(data), PART_TABLE_SIZE) - PART_LEN
-        self.extend(
-            while_true(
-                Part.from_bytes(data[i : i + PART_LEN])
-                for i in range(0, size, PART_LEN)
-            )
-        )
+        self.extend(self._parts_from_bytes(data))
         if len(self) == 0:
             raise PartitionError("No partition table found.", self)
         n = len(self) * PART_LEN
         # Check if there is a checksum record at the end of the partition table
-        if data[n : n + 2] == PART_CHKSUM_MAGIC:
+        if data[n : n + len(PART_CHKSUM_MAGIC)] == PART_CHKSUM_MAGIC:
             chksum = data[n + 16 : n + PART_LEN]
             md5 = hashlib.md5(data[:n]).digest()
             if md5 != chksum:  # Verify the checksum
@@ -177,7 +180,6 @@ class PartitionTable(list[Part]):
         if not self.flash_size:  # Infer flash size from partition table
             self.flash_size = self[-1].offset + self[-1].size
         self.check()
-        return self
 
     def to_bytes(self) -> bytes:
         """Save the partition table in firmware format."""
@@ -193,18 +195,6 @@ class PartitionTable(list[Part]):
         )
         assert len(data) == self.PART_TABLE_SIZE
         return data
-
-    def from_csv(self, filename: str) -> PartitionTable:
-        """Load the partiton table from a CSV file."""
-        self.clear()
-        with open(filename, newline="") as f:
-            reader = csv.reader((s for s in f if s[0] != "#"), skipinitialspace=True)
-            for name, _, subtype, offset, size, flags in reader:
-                self.add_part(
-                    name, subtype, int(size, 0), int(offset, 0), int(flags, 0)
-                )
-        self.check()
-        return self
 
     @property
     def app_part(self) -> Part:
@@ -258,7 +248,7 @@ class PartitionTable(list[Part]):
         Returns the new size of the partition."""
         i = self.index(self.by_name(name))
         i = [p.name for p in self].index(name)
-        if new_size == 0:  # Exapnd to fill available space
+        if new_size == 0:  # Expand to fill available space
             upper_limit = self[i + 1].offset if i + 1 < len(self) else self.flash_size
             new_size = upper_limit - self[i].offset
         self[i] = self[i]._replace(size=new_size)

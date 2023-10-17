@@ -1,29 +1,25 @@
 # MIT License: Copyright (c) 2023 @glenn20
+"""Provides a File-like interface to the flash storage on a serial-attached
+ESP32 device (ESP32/S2/S3/C2/C3).
+
+Provides the `Esp32FileWrapper` class which extends the `io.RawIOBase` class to
+provided a File-like interface to the flash storage on the ESP32 device. Uses
+`esptool.py` to read and write data to/from the attached device.
+
+If `common.debug` is set True, all esptool.py commands and output are printed to
+stdout.
+"""
 
 import io
 import os
 import re
 import subprocess
 import time
-from dataclasses import dataclass
 from tempfile import NamedTemporaryFile
 
 from .common import MB, debug, error
 
 esptool_args = "--baud 460800"  # Default arguments for the esptool.py commands
-
-
-@dataclass
-class Esp32Image:
-    """A class to hold information about an esp32 firmware file or device"""
-
-    file: io.IOBase
-    chip_name: str
-    flash_size: int
-    app_size: int
-    offset: int  # Esp32 and S2 firmware files have a global offset of 0x1000
-    bootloader_offset: int  # Offset of bootloader: esp32/s2=0x1000 else 0
-    is_device: bool
 
 
 def shell(command: str) -> bytes:
@@ -33,8 +29,8 @@ def shell(command: str) -> bytes:
         print("$", command)
     result = subprocess.run(command, capture_output=True, check=True, shell=True)
     if debug:
-        print(result.stdout.decode())
         print(result.stderr.decode())
+        print(result.stdout.decode())
     return result.stdout
 
 

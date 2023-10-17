@@ -1,5 +1,28 @@
 # MIT License: Copyright (c) 2023 @glenn20
+"""
+Provides functions to streamline and enhance the use of `argparse` to process
+command line arguments.
 
+Provides the `parser(usage, typed_namespace)` function which returns an
+`ArgumentParser`.
+
+`parser()` uses the `usage` string and `typed_namespace` together to provide:
+
+1. static type checking for the fields in namespace returned by
+   `argparse.parse_args()`.
+2. automatic conversion of string arguments to the correct type (using the
+   `type=` keyword of `argparse.add_argument()`).
+3. an overly-elaborate method for avoiding the boilerplate of
+   `argparse.add_argument()` which also makes the command usage easier for
+   humans to parse from the code.
+
+Also includes some argument type conversion helper functions:
+- `numeric_arg(arg)`: Convert a string to an integer number of bytes.
+- `arglist(arg)`: Split a string into a list of lists of strings.
+- `partlist(arg)`: Split a string into a list of tuples describing a Partition.
+- `unsplit(arglist)`: Join a list of lists of strings or ints back into a single
+  string.
+"""
 import re
 import typing
 from argparse import ArgumentParser, Namespace
@@ -150,6 +173,8 @@ def parser(usage: str, typed_namespace: Namespace | None = None) -> ArgumentPars
         # Use type information in the typed_namespace to get the arg type
         name: str = opts[-1].lstrip("-").replace("-", "_")
         typ: type | None = type_list.get(name)  # Get type from typed_namespace
+        if not typ:
+            raise ValueError(f"Argument `{name}` not found in {typed_namespace}")
         if fun := type_mapper.get(typ):
             # A type conversion function was provided in type_mapper
             kwargs["type"] = fun

@@ -1,3 +1,20 @@
+#!/usr/bin/env python3
+# MIT License: Copyright (c) 2023 @glenn20
+"""Provides utility functions to build, read and print partition table layouts
+for ESP32 firmware, including OTA layouts.
+
+Provides:
+- `new_table(table, layout)`: Replace the partitions in table with new
+  partitions generated from the provided layout.
+- `ota_layout(table, app_part_size=0)`: Return an OTA partition table
+  layout
+- `from_csv(table, filename)`: Replace the partitions in table with new
+  partitions from a CSV file.
+- `print_table(table)`: Print a detailed description of the partition table.
+"""
+
+
+import csv
 from typing import Iterable
 
 from colorama import Fore
@@ -57,13 +74,13 @@ def new_table(
     return table
 
 
-def make_ota_layout(
+def ota_layout(
     table: PartitionTable,
     app_part_size: int = 0,  # Size of the partition to hold the app (bytes)
 ) -> str:
-    """Build a layout for a new OTA-enabled partition table for the given flash
-    size and app_part_size. If app_part_size is 0, use the recommended size for
-    the flash size."""
+    """Build a layout string for a new OTA-enabled partition table, given
+    `flash_size` and `app_part_size`. If `app_part_size` is 0, use the
+    recommended size for the flash size."""
     flash_size = table.flash_size
     if not app_part_size:
         app_part_size = ota_part_size(flash_size)
@@ -74,6 +91,17 @@ def make_ota_layout(
         ota_0=app_part_size,
         ota_1=app_part_size,
     )
+
+
+def from_csv(table: PartitionTable, filename: str) -> PartitionTable:
+    """Load the partiton table from a CSV file."""
+    table.clear()
+    with open(filename, newline="") as f:
+        reader = csv.reader((s for s in f if s[0] != "#"), skipinitialspace=True)
+        for name, _, subtype, offset, size, flags in reader:
+            table.add_part(name, subtype, int(size, 0), int(offset, 0), int(flags, 0))
+    table.check()
+    return table
 
 
 def print_table(table: PartitionTable) -> None:
