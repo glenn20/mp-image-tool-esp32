@@ -18,7 +18,7 @@ import shutil
 
 from colorama import init as colorama_init
 
-from . import common, image_file, layouts, parse_args
+from . import common, image_file, layouts, ota_update, parse_args
 from .common import KB, MB, B, error, info, vprint
 from .image_file import Esp32Image
 from .partition_table import NAME_TO_TYPE, PartitionError, PartitionTable
@@ -52,6 +52,8 @@ class TypedNamespace(argparse.Namespace):
     extract_app: bool
     flash_size: int
     app_size: int
+    no_rollback: bool
+    ota_update: str
     from_csv: str
     table: PartList
     delete: ArgList
@@ -69,6 +71,7 @@ class TypedNamespace(argparse.Namespace):
     }
 
 
+# Remember to add any new arguments here to TypedNamespace above as well.
 usage = """
     mp-image-tool-esp32
 
@@ -82,6 +85,8 @@ usage = """
     -x --extract-app    | extract .app-bin from firmware
     -f --flash-size SIZE| size of flash for new partition table
     -a --app-size SIZE  | size of factory and ota app partitions
+    --no-rollback       | disable app rollback after OTA update
+    --ota-update FILE   | perform an OTA firmware updgrade over the serial port
     --from-csv FILE     | load new partition table from CSV file
     --table ota/default/NAME1=SUBTYPE:SIZE[,NAME2,...] \
                         | create new partition table, eg: \
@@ -156,6 +161,12 @@ def process_arguments() -> None:
         if args.flash_size and args.flash_size != table.flash_size:
             table.flash_size = args.flash_size
         extension += f"-{args.flash_size // MB}MB"
+
+    if args.ota_update:  # --ota-update FILE : Perform an OTA firmware upgrade
+        if not image.is_device:
+            raise ValueError("--ota requires an esp32 device")
+        info(f"Performing OTA firmware upgrade from '{args.ota_update}'...")
+        ota_update.ota_update(image, table, args.ota_update, args.no_rollback)
 
     if args.from_csv:  # --from-csv FILE : Replace part table from CSV file.
         table = layouts.from_csv(table, args.from_csv)
@@ -244,7 +255,7 @@ def process_arguments() -> None:
         for name, filename in args.read:
             part = table.by_name(name)
             info(f"Saving partition '{name}' into '{filename}'...")
-            n = image_file.read_part(image, part, filename)
+            n = image_file.read_part_to_file(image, part, filename)
             vprint(f"Wrote {n:#x} bytes to '{filename}'.")
 
     if args.write:  # --write NAME1=FILE1[,...] : Write FILES into partitions
@@ -253,7 +264,7 @@ def process_arguments() -> None:
         for name, filename in args.write:
             part = table.by_name(name)
             info(f"Writing partition '{name}' from '{filename}'...")
-            n = image_file.write_part(image, part, filename)
+            n = image_file.write_part_from_file(image, part, filename)
             vprint(f"Wrote {n:#x} bytes to partition '{name}'.")
 
     if args.bootloader:  # --bootloader FILE: load a new bootloader from FILE

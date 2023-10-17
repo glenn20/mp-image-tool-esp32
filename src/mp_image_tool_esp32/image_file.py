@@ -172,24 +172,36 @@ def erase_part(image: Esp32Image, part: Part, size: int = 0) -> None:
         f.write(b"\xff" * (size or part.size))
 
 
-def read_part(image: Esp32Image, part: Part, output: str) -> int:
+def read_part(image: Esp32Image, part: Part) -> bytes:
+    """Return the contents of the `part` partition from `image` as `bytes"""
+    f = image.file
+    f.seek(part.offset - image.offset)
+    return f.read(part.size)
+
+
+def read_part_to_file(image: Esp32Image, part: Part, output: str) -> int:
     """Read contents of the `part` partition from `image` into a file"""
     with open(output, "wb") as fout:
-        f = image.file
-        f.seek(part.offset - image.offset)
-        return fout.write(f.read(part.size))
+        return fout.write(read_part(image, part))
 
 
-def write_part(image: Esp32Image, part: Part, input: str) -> int:
+def write_part(
+    image: Esp32Image, part: Part, data: bytes | bytearray | memoryview
+) -> int:
+    """Write contents of `data` into the `part` partition in `image`."""
+    f = image.file
+    f.seek(part.offset - image.offset)
+    return f.write(data)
+
+
+def write_part_from_file(image: Esp32Image, part: Part, input: str) -> int:
     """Write contents of `input` file into the `part` partition in `image`."""
     if part.size < os.path.getsize(input):
         raise ValueError(
             f"Partition {part.name} ({part.size} bytes)"
             f" is too small for data ({os.path.getsize(input)} bytes)."
         )
-    f = image.file
-    f.seek(part.offset - image.offset)
-    return f.write(Path(input).read_bytes())
+    return write_part(image, part, Path(input).read_bytes())
 
 
 def write_bootloader(image: Esp32Image, input: str) -> int:

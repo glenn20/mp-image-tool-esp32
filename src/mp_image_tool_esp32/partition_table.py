@@ -128,6 +128,12 @@ class PartitionTable(list[Part]):
             raise PartitionError(f"Partition {name} not found.", self)
         return p
 
+    def by_subtype(self, subtype_name: str) -> Part:
+        p = next((p for p in self if p.subtype_name == subtype_name), None)
+        if not p:
+            raise PartitionError(f"Partition {subtype_name} not found.", self)
+        return p
+
     def print(self) -> None:
         print(
             "# Name             Type     SubType      Offset"
