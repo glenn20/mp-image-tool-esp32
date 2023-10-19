@@ -3,10 +3,9 @@
 Tool for manipulating partition tables in MicroPython esp32 firmware image files
 and device flash storage.
 
-`mp-image-tool-esp32` manipulates micropython esp32 firmware files (such as
-those at <https://micropython.org/download?port=esp32>) and flash storage on
-serial-attached ESP32 devices. It has been tested to work with ESP32, ESP32-S2
-and ESP32-S3 firmware images and devices.
+`mp-image-tool-esp32` manipulates micropython esp32 firmware files and flash
+storage on serial-attached ESP32 devices. It has been tested to work with ESP32,
+ESP32-S2 and ESP32-S3 firmware images and devices.
 
 **Contents: [Features](#features) | [Installation](#installation) |
 [Examples](#examples) | [OTA Updates](#ota-firmware-updates) | [Usage](#usage)**
@@ -30,9 +29,9 @@ Micropython app fills 78.8% of factory partition (421 kB free)
 
 `mp-image-tool-esp32` can operate on:
 
-- **micropython esp32 firmware files** (including those downloaded from
+- micropython esp32 firmware files (including those downloaded from
   [micropython.org](https://micropython.org/download?port=esp32)) or
-- **flash storage in esp32 devices** attached via serial port.
+- flash storage in esp32 devices attached via serial port.
 
 ### Operations on files and esp32 devices
 
@@ -55,7 +54,8 @@ Micropython app fills 78.8% of factory partition (421 kB free)
     with `--table ota`)
 - Extract the micropython application image (`.app-bin`) from the firmware
   or device
-  - `--extract-app`: this `.app-bin` file can be used for OTA firmware updates.
+  - `--extract-app`: the `.app-bin` file saved can be used for OTA firmware
+    updates.
 
 ### Operations on serial-attached esp32 devices
 
@@ -96,7 +96,7 @@ operations on attached esp32 devices.
 
 To use without installing:
 
-- Prerequisites (esptool and colorama):
+- Prerequisites (`esptool` and `colorama`):
 
   ```bash
   pip install -r requirements.txt
@@ -177,7 +177,7 @@ Micropython app fills 76.3% of ota_0 partition (485 kB free)
 
 #### Resize the flash size and expand the vfs partition to fill available space
 
-- will automatically erase the first 4 block of any data partition which is
+- will automatically erase the first 4 blocks of any data partition which is
   changed by the operation.
   - micropython will automatically create a new filesystem on 'vfs' at next
     boot.
@@ -240,7 +240,7 @@ Erasing data partition: vfs...
 #### Perform an OTA firmware update
 
 ```console
-$ mp-image-tool-esp32 u0 --ota ESP32_GENERIC-20231005-v1.21.0.app-bin
+$ mp-image-tool-esp32 u0 --ota-update ESP32_GENERIC-20231005-v1.21.0.app-bin
 Opening esp32 device: /dev/ttyUSB0...
 Chip type: esp32
 Flash size: 8MB
