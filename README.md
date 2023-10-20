@@ -94,6 +94,15 @@ operations on attached esp32 devices.
 
 ## Installation
 
+First, copy this github repo into a folder somewhere:
+
+```bash
+git clone https://github.com/glenn20/mp-image-tool-esp32
+cd mp-image-tool-esp32
+```
+
+If you use a python virtual environment, make sure it is active.
+
 To use without installing:
 
 - Prerequisites (`esptool` and `colorama`):
