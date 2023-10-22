@@ -63,7 +63,6 @@ class TypedNamespace(argparse.Namespace):
     erase_fs: ArgList
     read: ArgList
     write: ArgList
-    bootloader: str
     type_mapper = {  # Map types to funcs which return type from a string arg.
         int: parse_args.numeric_arg,  # Convert arg to an integer.
         PartList: parse_args.partlist,  # Convert arg to a list of Part tuples.
@@ -105,17 +104,16 @@ usage = """
     --erase-fs NAME1[,NAME2] \
                         | erase first 4 blocks of a partition on flash storage.\
                             Micropython will initialise filesystem on next boot.
-    --read NAME1=FILE1[,NAME2=FILE2] \
-                        | copy partition contents to file
-    --write NAME1=FILE1[,NAME2=FILE2] \
-                        | write file contents into partitions on the \
-                            device flash storage.
-    --bootloader FILE   | load a new bootloader from FILE
+    --read NAME1=FILE1[,NAME2=FILE2,bootloader=FILE,...] \
+                        | copy partition contents (or bootloader) to file
+    --write NAME1=FILE1[,NAME2=FILE2,bootloader=FILE,...] \
+                        | write file contents into partitions (or bootloader) \
+                            on the device flash storage.
 
     Where SIZE is a decimal or hex number with an optional suffix (M=megabytes,
     K=kilobytes, B=blocks (0x1000=4096 bytes)).
 
-    Options --erase, --erase-fs, --read, --write and --bootloader can only be
+    Options --erase, --erase-fs, --read and --write can only be
     used when operating on serial-attached devices (not firmware files).
 """
 
@@ -249,6 +247,11 @@ def process_arguments() -> None:
         if not image.is_device:
             raise ValueError("--read requires an esp32 device")
         for name, filename in args.read:
+            if name == "bootloader":
+                info(f"Saving bootloader into '{filename}'...")
+                n = image_file.read_bootloader(image, filename)
+                vprint(f"Wrote {n:#x} bytes to '{filename}'.")
+                continue
             part = table.by_name(name)
             info(f"Saving partition '{name}' into '{filename}'...")
             n = image_file.read_part_to_file(image, part, filename)
@@ -258,17 +261,15 @@ def process_arguments() -> None:
         if not image.is_device:
             raise ValueError("--write requires an esp32 device")
         for name, filename in args.write:
+            if name == "bootloader":
+                info(f"Writing bootloader from '{filename}'...")
+                n = image_file.write_bootloader(image, filename)
+                vprint(f"Wrote {n:#x} bytes to bootloader.")
+                continue
             part = table.by_name(name)
             info(f"Writing partition '{name}' from '{filename}'...")
             n = image_file.write_part_from_file(image, part, filename)
             vprint(f"Wrote {n:#x} bytes to partition '{name}'.")
-
-    if args.bootloader:  # --bootloader FILE: load a new bootloader from FILE
-        if not image.is_device:
-            raise ValueError("--bootloader requires an esp32 device")
-        info(f"Writing bootloader from '{args.bootloader}'...")
-        n = image_file.write_bootloader(image, args.bootloader)
-        vprint(f"Wrote {n:#x} bytes to bootloader.")
 
     image.file.close()
 

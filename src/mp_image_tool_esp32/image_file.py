@@ -213,8 +213,16 @@ def write_bootloader(image: Esp32Image, input: str) -> int:
             f"File ({size} bytes) is too big for bootloader ({max_size} bytes)."
         )
     f = image.file
-    f.seek(image.offset)  # Bootloader is image.offset from start of file
+    f.seek(IMAGE_OFFSETS[image.chip_name])
     return f.write(Path(input).read_bytes())
+
+
+def read_bootloader(image: Esp32Image, output: str) -> int:
+    """Read contents of bootloader from `image` and save into `output` file."""
+    with open(output, "wb") as fout:
+        f = image.file
+        f.seek(IMAGE_OFFSETS[image.chip_name])
+        return fout.write(f.read(PartitionTable.BOOTLOADER_SIZE))
 
 
 def update_partitions(
