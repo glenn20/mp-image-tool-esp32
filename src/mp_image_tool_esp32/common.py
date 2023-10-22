@@ -13,22 +13,30 @@ debug: bool = False
 verbose: bool = True
 
 
+def colour_print(colour: str, *args: Any, **kwargs: Any) -> None:
+    """Print with a colour prefix."""
+    print(colour, end="")
+    print(*args, Fore.RESET, **kwargs)
+
+
 def warn(*args: Any, **kwargs: Any) -> None:
-    print(Fore.YELLOW, end="")
-    print("Warning:", *args, Fore.RESET, **kwargs)
+    colour_print(Fore.YELLOW, "Warning:", *args, **kwargs)
 
 
 def error(*args: Any, **kwargs: Any) -> None:
-    print(Fore.RED, end="")
-    print(*args, Fore.RESET, **kwargs)
+    colour_print(Fore.RED, *args, **kwargs)
 
 
 def info(*args: Any, **kwargs: Any) -> None:
     if verbose or debug:
-        print(Fore.GREEN, end="")
-        print(*args, Fore.RESET, **kwargs)
+        colour_print(Fore.GREEN, *args, **kwargs)
 
 
 def vprint(*args: Any, **kwargs: Any) -> None:
     if verbose or debug:
         print(*args, **kwargs)
+
+
+def dprint(*args: Any, **kwargs: Any) -> None:
+    if debug:
+        colour_print(Fore.YELLOW, *args, **kwargs)

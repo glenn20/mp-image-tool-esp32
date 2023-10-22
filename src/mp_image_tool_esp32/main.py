@@ -139,15 +139,11 @@ def process_arguments() -> None:
     # Open input (args.filename) from firmware file or esp32 device
     info(f"Opening {what}: {input}...")
     image: Esp32Image = image_file.open_esp32_image(input)
+    if image.app_size:
+        x = image.app_size
+        vprint(f"Micropython App size: {x:#x} bytes ({x // KB:,d} KB)")
     table: PartitionTable = image_file.load_partition_table(image)
     if common.verbose:
-        print(f"Chip type: {table.chip_name}")
-        print(f"Flash size: {table.flash_size // MB}MB")
-        if table.app_size:
-            print(
-                f"Micropython App size: {table.app_size:#x} bytes "
-                f"({table.app_size // KB:,d} KB)"
-            )
         layouts.print_table(table)
     initial_table = copy.copy(table)  # Preserve deep copy of original table
     extension = ""  # Each op that changes table adds identifier to extension

@@ -20,7 +20,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from .common import MB, B, info, warn
+from .common import MB, B, info, vprint, warn
 from .image_device import EspDeviceFileWrapper, esp32_device_detect
 from .partition_table import Part, PartitionTable
 
@@ -94,21 +94,20 @@ def open_image_device(filename: str) -> Esp32Image:
     File object wrapper around `esptool.py` to read and write to the device."""
     f = EspDeviceFileWrapper(filename)
     detected_chip_name, detected_flash_size = esp32_device_detect(filename)
+    vprint(f"Detected chip type: {detected_chip_name}")
+    vprint(f"Detected Flash size: {detected_flash_size // MB}MB")
     f.seek(IMAGE_OFFSETS[detected_chip_name])
     chip_name, flash_size = _load_bootloader_header(f)
     f.end = flash_size
     offset = 0  # No offset required for device files
     app_size = 0  # Unknown app size
-    if detected_chip_name and detected_chip_name != chip_name:
-        print(
-            f"Warning: Detected chip ({detected_chip_name})"
-            f" is different from bootloader ({chip_name})."
-        )
-    if detected_flash_size and detected_flash_size != flash_size:
-        print(
-            f"Warning: Detected flash size ({detected_flash_size // MB}MB)"
-            f" is different from bootloader ({flash_size // MB}MB)."
-        )
+
+    def check_boot(det: str | int, boot: str | int, what: str):
+        if det and det != boot:
+            warn(f"Detected {what} ({det}) is different from bootloader ({boot}).")
+
+    check_boot(detected_chip_name, chip_name, "chip")
+    check_boot(detected_flash_size // MB, flash_size // MB, "flash size")
     return Esp32Image(f, chip_name, flash_size, app_size, offset, True)
 
 
@@ -117,6 +116,8 @@ def open_image_file(filename: str) -> Esp32Image:
     File object for reading from the firmware file."""
     f = open(filename, "r+b")
     chip_name, flash_size = _load_bootloader_header(f)
+    vprint(f"Chip type: {chip_name}")
+    vprint(f"Flash size: {flash_size // MB}MB")
     offset = IMAGE_OFFSETS[chip_name]
     # Get app size from the size of the file. TODO: Should use app_part.offset
     app_size = f.seek(0, 2) - PartitionTable.APP_PART_OFFSET + offset
