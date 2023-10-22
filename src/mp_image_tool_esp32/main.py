@@ -107,8 +107,8 @@ usage = """
     --read NAME1=FILE1[,NAME2=FILE2,bootloader=FILE,...] \
                         | copy partition contents (or bootloader) to file
     --write NAME1=FILE1[,NAME2=FILE2,bootloader=FILE,...] \
-                        | write file contents into partitions (or bootloader) \
-                            on the device flash storage.
+                        | write file(s) contents into partitions \
+                            (or bootloader) on the device flash storage.
 
     Where SIZE is a decimal or hex number with an optional suffix (M=megabytes,
     K=kilobytes, B=blocks (0x1000=4096 bytes)).

@@ -67,7 +67,7 @@ Use `mp-image-tool-esp32 u0` to operate on the esp32 device attached to
     partitions into files
   - `--write factory=micropython.app-bin` : write contents of files into
     partitions
-  - `--bootloader bootloader.bin` : load a new bootloader from file
+  - `--write bootloader=bootloader.bin` : load a new bootloader from file
   - `--erase nvs,otadata` : erase partitions
   - `--erase-fs vfs` : erase 'vfs' filesystem (erases the first 4 blocks of the
       partition)
@@ -361,8 +361,9 @@ usage: mp-image-tool-esp32 [-h] [-o OUTPUT] [-q] [-d] [-x] [-f SIZE] [-a SIZE]
                            [--delete NAME1[,NAME2]]
                            [--add NAME1:SUBTYPE:OFFSET:SIZE[,NAME2,...]]
                            [--resize NAME1=SIZE1[,NAME2=SIZE2]] [--erase NAME1[,NAME2]]
-                           [--erase-fs NAME1[,NAME2]] [--read NAME1=FILE1[,NAME2=FILE2]]
-                           [--write NAME1=FILE1[,NAME2=FILE2]] [--bootloader FILE]
+                           [--erase-fs NAME1[,NAME2]]
+                           [--read NAME1=FILE1[,NAME2=FILE2,bootloader=FILE,...]]
+                           [--write NAME1=FILE1[,NAME2=FILE2,bootloader=FILE,...]]
                            filename
 
 Tool for manipulating MicroPython esp32 firmware files and flash storage on esp32 devices.
@@ -402,11 +403,10 @@ options:
   --erase-fs NAME1[,NAME2]
                         erase first 4 blocks of a partition on flash storage. Micropython
                         will initialise filesystem on next boot.
-  --read NAME1=FILE1[,NAME2=FILE2]
-                        copy partition contents to file
-  --write NAME1=FILE1[,NAME2=FILE2]
-                        write file contents into partitions on the device flash storage.
-  --bootloader FILE     load a new bootloader from FILE
+  --read NAME1=FILE1[,NAME2=FILE2,bootloader=FILE,...]
+                        copy partition contents to file(s)
+  --write NAME1=FILE1[,NAME2=FILE2,bootloader=FILE,...]
+                        write file(s) contents into partitions on the device flash storage.
 
 Where SIZE is a decimal or hex number with an optional suffix (M=megabytes, K=kilobytes,
 B=blocks (0x1000=4096 bytes)). Options --erase, --erase-fs, --read, --write and --bootloader
