@@ -301,12 +301,11 @@ OTA-enabled devices include those which:
   - downloaded from
     [micropython.org](https://micropython.org/download?port=esp32).
 
-
 ### OTA Rollback
 
 **CAUTION:** If you update the firmware with `--ota-update` and **OTA rollback**
 is enabled, the device will automatically reset into the new firmware on
-completion. If you then connect to the device over the serial port the device
+completion. If you then connect to the device over the serial port, the device
 will usually reset again. If your startup files have **not** marked the firmware
 as `valid`, your device will have **rolled back** to the previous firmware.
 
@@ -321,7 +320,7 @@ You can stop the **rollback** by marking the new firmware as **valid** with:
   `esp32.Partition.mark_app_valid_cancel_rollback()` after **every** restart.
   - Eg. in `main.py` -- or you might choose to wait till after your app has
     initialised wifi and any other devices you require so you know the new
-    new firmware is good for your app.
+    firmware is good for your app.
   - If it fails, just call `machine.hard_reset()` and
     the device will revert to the previous firmware on restart.
 
