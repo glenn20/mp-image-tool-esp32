@@ -19,7 +19,7 @@ import sys
 
 from colorama import init as colorama_init
 
-from . import image_file, layouts, ota_update, parse_args
+from . import image_device, image_file, layouts, ota_update, parse_args
 from .common import KB, MB, B, Levels, action, error, info, set_verbosity, verbosity
 from .image_file import Esp32Image
 from .partition_table import NAME_TO_TYPE, PartitionError, PartitionTable
@@ -56,6 +56,7 @@ class TypedNamespace(argparse.Namespace):
     app_size: int
     no_rollback: bool
     ota_update: str
+    baud: int
     from_csv: str
     table: PartList
     delete: ArgList
@@ -89,6 +90,7 @@ usage = """
     -a --app-size SIZE  | size of factory and ota app partitions
     --check             | check app partitions and OTA config are valid
     --no-rollback       | disable app rollback after OTA update
+    --baud RATE         | baud rate for serial port (default: 460800)
     --ota-update FILE   | perform an OTA firmware updgrade over the serial port
     --from-csv FILE     | load new partition table from CSV file
     --table ota/default/NAME1=SUBTYPE:SIZE[,NAME2,...] \
@@ -138,6 +140,9 @@ def process_arguments() -> None:
     input = re.sub(r"^c([0-9]+)$", r"COM\1", input)
     basename: str = os.path.basename(input)
     what: str = "esp32 device" if image_file.is_device(input) else "image file"
+
+    if args.baud:
+        image_device.set_baudrate(args.baud)
 
     # Open input (args.filename) from firmware file or esp32 device
     action(f"Opening {what}: {input}...")

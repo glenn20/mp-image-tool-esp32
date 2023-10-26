@@ -20,9 +20,13 @@ from typing import IO
 import tqdm
 from colorama import Fore
 
-from .common import KB, MB, Levels, debug, error, verbosity
+from .common import KB, MB, Levels, debug, error, info, verbosity
 
-esptool_args: str = "--baud 460800"  # Default arguments for the esptool.py commands
+BAUDRATES = (115200, 230400, 460800, 921600, 1500000, 2000000, 3000000)
+
+baudrate = 460800  # Default baudrate for esptool.py
+
+esptool_args: str = ""  # Default arguments for the esptool.py commands
 
 tqdm_args = {
     "ascii": " =",
@@ -41,6 +45,13 @@ tqdm_args = {
 PROGRESS_MESSAGE_REGEXP = re.compile(
     r"(Writing at )?((0x)?[0-9a-f]+)[.]* *\([0-9]+ *%\)[\n\r\x08]$"
 )
+
+
+def set_baudrate(baud: int) -> int:
+    global baudrate
+    baudrate = next(i for i in sorted(BAUDRATES, reverse=True) if i <= baud)
+    info(f"Using baudrate {baudrate}")
+    return baudrate
 
 
 def esptool_progress_bar(stdout: IO[str], size: int) -> str:
@@ -92,7 +103,7 @@ def esptool(port: str, command: str, size: int = 0) -> str:
     """Convenience function for calling an esptool.py command."""
     global esptool_args
     try:
-        cmd = f"esptool.py {esptool_args} --port {port} {command}"
+        cmd = f"esptool.py {esptool_args} --baud {baudrate} --port {port} {command}"
         return exec_esptool(cmd, size)
     except CalledProcessError as err:
         error(f"Error: {err.cmd} returns error {err.returncode}.")
