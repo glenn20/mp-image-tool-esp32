@@ -2,7 +2,8 @@
 """Provides classes and functions to manage OTA firmware updates over the serial
 interface to ESP32 devices.
 
-Provides: - ota_update(image: Esp32Image, table: PartitionTable, filename: str, no_rollback=False)
+Provides:
+- ota_update(image: Esp32Image, table: PartitionTable, filename: str, no_rollback=False)
 
 If `table` includes `OTA` partitions, write the app firmware in `filename` to the
 next available `OTA` partition and set it as the next boot partition.
@@ -18,9 +19,18 @@ import struct
 from enum import IntEnum
 from functools import cached_property
 
-from .common import info, warn
+from .common import action, debug, warning
 from .image_file import Esp32Image, read_part, write_part, write_part_from_file
 from .partition_table import OTADATA_SIZE, Part, PartitionTable
+
+OTA_SIZE = 0x20  # The size of an OTA record in bytes (32 bytes)
+OTA_OFFSETS = (0, 0x1000)  # The offsets of the OTA records in the otadata partition
+OTA_RECORDS = ((i, i + OTA_SIZE) for i in OTA_OFFSETS)  # Offset and size of OTA records
+OTA_FMT = b"<L20sLL"  # The format for reading/writing binary OTA records
+OTA_LABEL = b"\xff" * OTA_SIZE  # The expected label field in the OTA record
+OTA_CRC_INIT = 0xFFFFFFFF  # The initial value for the CRC32 checksum
+
+ByteString = bytes | bytearray | memoryview
 
 
 class OtaState(IntEnum):
@@ -34,13 +44,9 @@ class OtaState(IntEnum):
     UNDEFINED = 0xFFFFFFFF
 
 
-OTA_FMT = b"<L20sLL"  # The format for reading/writing binary OTA records
-OTA_LABEL = b"\xff" * 20  # The expected label field in the OTA record
-
-
 def ota_crc(seq: int) -> int:
     """Calculate the CRC32 checksum of an OTA sequence number."""
-    return binascii.crc32(struct.pack(b"<L", seq), 0xFFFFFFFF)
+    return binascii.crc32(seq.to_bytes(4, "little"), OTA_CRC_INIT)
 
 
 def ota_is_valid(seq: int, state: int, crc: int) -> bool:
@@ -48,22 +54,22 @@ def ota_is_valid(seq: int, state: int, crc: int) -> bool:
     return state == OtaState.VALID and ota_crc(seq) == crc
 
 
-def ota_sequence_number(data: bytes | bytearray | memoryview) -> int:
+def ota_sequence_numbers(data: ByteString) -> int:
     """Return the ota sequence number from a binary OTA record in `data` or 0 if
     the record is invalid."""
     seq, _, state, crc = struct.unpack(OTA_FMT, data)
-    is_valid = state == OtaState.VALID and ota_crc(seq) == crc
+    is_valid = ota_is_valid(seq, state, crc)
+    debug(f"OTA record: seq={seq}, state={state}, crc={crc}, valid={is_valid}")
     return seq if is_valid else 0
 
 
 def ota_record(seq: int, state: int) -> bytearray:
     """Return a bytearray containing a binary OTA record for sequence number
     `seq` and state `state`."""
-    data = bytearray(0x20)
-    if seq > 0:
-        struct.pack_into(OTA_FMT, data, 0, seq, OTA_LABEL, state, ota_crc(seq))
-    else:
-        data[:] = b"\xff" * len(data)
+    if seq < 1 or seq > 0xFFFFFFFF:
+        return bytearray(b"\xff") * OTA_SIZE
+    data = bytearray(OTA_SIZE)
+    struct.pack_into(OTA_FMT, data, 0, seq, OTA_LABEL, state, ota_crc(seq))
     return data
 
 
@@ -83,7 +89,7 @@ class OTAUpdater:
 
         data = read_part(self.image, self.otadata_part)
         self.ota_sequence_number = max(
-            ota_sequence_number(buf) for buf in (data[0:0x20], data[0x1000:0x1020])
+            ota_sequence_numbers(buf) for buf in (data[i:j] for i, j in OTA_RECORDS)
         )
 
     @cached_property
@@ -122,7 +128,7 @@ class OTAUpdater:
             if seq - start > len(self._ota_app_parts):
                 raise ValueError(f"'{part.name}' not found in 'ota' partitions")
         if seq == start:
-            warn(f"'{part.name}' is already set for booting.")
+            warning(f"'{part.name}' is already set for booting.")
             return
         data = bytearray(b"\xff") * OTADATA_SIZE
         data[0:0x20], data[0x1000:0x1020] = (
@@ -153,8 +159,8 @@ def ota_update(
     ota = OTAUpdater(image, table, no_rollback)
 
     new_part = ota.get_next_update()  # Get the next available OTA update partition
-    info(f"Writing firmware to OTA partition {new_part.name}...")
+    action(f"Writing firmware to OTA partition {new_part.name}...")
     write_part_from_file(image, new_part, firmware)
 
-    info("Updating otadata partition...")
+    action("Updating otadata partition...")
     ota.set_boot(new_part)

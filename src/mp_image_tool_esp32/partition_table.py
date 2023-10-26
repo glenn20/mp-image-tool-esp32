@@ -55,7 +55,7 @@ class PartitionError(Exception):
         self,
         msg: str = "Error in partition table.",
         table: PartitionTable | None = None,
-    ):
+    ) -> None:
         super().__init__(msg)
         self.table = table
 
@@ -115,7 +115,7 @@ class PartitionTable(list[Part]):
     APP_PART_OFFSET = APP_PART_OFFSET
     OTADATA_SIZE = OTADATA_SIZE
 
-    def __init__(self, flash_size: int = 0, chip_name: str = ""):
+    def __init__(self, flash_size: int = 0, chip_name: str = "") -> None:
         self.flash_size = flash_size
         self.chip_name = chip_name
         self.app_size = 0

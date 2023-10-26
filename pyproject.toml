@@ -16,7 +16,10 @@ classifiers = [
 ]
 requires-python = ">=3.7"
 version = "0.0.1"
-dynamic = ["dependencies"]
+dynamic = ["dependencies", "version"]
+
+[tool.hatch.version]
+path = "src/mp_image_tool_esp32/__init__.py"
 
 [project.scripts]
 mp-image-tool-esp32 = "mp_image_tool_esp32.main:main"
