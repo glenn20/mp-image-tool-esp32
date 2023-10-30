@@ -99,45 +99,28 @@ class Esp32Params:
     chip_name: str  # esp32, esp32s2, esp32s3, esp32c2, esp32c3 or esp32c6
     flash_size: int  # Size of flash storage in bytes (from firmware header)
     app_size: int  # Size of app partition in bytes
-    offset: int  # ESP32/S2 firmware files have a global offset of 0x1000 bytes
+    bootloader: int  # Offset of bootloader (0x1000 bytes for esp32/s2 else 0)
     is_device: bool
 
 
-def _check_app_image(data: ByteString, name: str, image: Esp32Params) -> bool:
-    """Check that the `data` is a valid app image for this device/firmware."""
-    chip_name, flash_size = _chip_flash_size(data)
-    if not chip_name:  # `data` is not an app image
-        return False
-    if chip_name != (y := image.chip_name):
-        raise ValueError(
-            f"'{name}': App image chip type ({chip_name}) "
-            f"does not match firmware ({y})."
-        )
-    if name == "bootloader" and flash_size != (y := image.flash_size):
-        warning(f"'{name}': App {flash_size=} does not match bootloader ({y}).")
-    return True
+class FirmwareFileWithOffset(io.BufferedRandom):
+    """A class to wrap a file object and add an offset to the seek and tell.
+    On esp32 and s2, firmware files start at the bootloader offset (0x1000
+    bytes)."""
 
+    def __init__(self, file: io.BufferedRandom, offset: int = 0):
+        super().__init__(file.detach())
+        self.offset = offset
 
-def open_image_device(filename: str) -> Esp32Params:
-    """Open a serial device and return an `Esp32Image` object, which includes a
-    File object wrapper around `esptool.py` to read and write to the device."""
-    f = EspDeviceFileWrapper(filename)
-    detected_chip_name, detected_flash_size = esp32_device_detect(filename)
-    info(f"Detected chip type: {detected_chip_name}")
-    info(f"Detected Flash size: {detected_flash_size // MB}MB")
-    f.seek(BOOTLOADER_OFFSET[detected_chip_name])
-    chip_name, flash_size = _load_bootloader_header(f)
-    f.end = flash_size
-    offset = 0  # No offset required for device files
-    app_size = 0  # Unknown app size
+    def seek(self, pos: int, whence: int = 0):
+        if whence == 0:  # If seek from start of file, adjust for offset
+            pos -= self.offset  # Adjust pos for offset
+            if pos < 0:
+                raise OSError(f"Attempt to seek before offset ({self.offset:#x}).")
+        return super().seek(pos, whence) + self.offset
 
-    def check_boot(det: str | int, boot: str | int, what: str):
-        if det and det != boot:
-            warning(f"Detected {what} ({det}) is different from bootloader ({boot}).")
-
-    check_boot(detected_chip_name, chip_name, "chip")
-    check_boot(detected_flash_size // MB, flash_size // MB, "flash size")
-    return Esp32Params(filename, f, chip_name, flash_size, app_size, offset, True)  # type: ignore
+    def tell(self) -> int:
+        return super().tell() + self.offset
 
 
 def open_image_file(filename: str) -> Esp32Params:
@@ -147,11 +130,35 @@ def open_image_file(filename: str) -> Esp32Params:
     chip_name, flash_size = _load_bootloader_header(f)
     info(f"Chip type: {chip_name}")
     info(f"Flash size: {flash_size // MB}MB")
-    offset = BOOTLOADER_OFFSET[chip_name]
+    bootloader = BOOTLOADER_OFFSET[chip_name]
+    if bootloader != 0:  # Is non-zero for esp32 and esp32s2 firmware files
+        f = FirmwareFileWithOffset(f, bootloader)
     # Get app size from the size of the file. TODO: Should use app_part.offset
-    app_size = f.seek(0, 2) - PartitionTable.APP_PART_OFFSET + offset
-    f.seek(0)
-    return Esp32Params(filename, f, chip_name, flash_size, app_size, offset, False)
+    app_size = f.seek(0, 2) - PartitionTable.APP_PART_OFFSET
+    f.seek(bootloader)
+    return Esp32Params(filename, f, chip_name, flash_size, app_size, bootloader, False)
+
+
+def open_image_device(filename: str) -> Esp32Params:
+    """Open a serial device and return an `Esp32Image` object, which includes a
+    File object wrapper around `esptool.py` to read and write to the device."""
+    f = EspDeviceFileWrapper(filename)
+    detected_chip_name, detected_flash_size = esp32_device_detect(filename)
+    f.seek(BOOTLOADER_OFFSET[detected_chip_name])
+    chip_name, flash_size = _load_bootloader_header(f)
+    info(f"Chip type: {detected_chip_name}")
+    info(f"Flash size: {detected_flash_size // MB}MB")
+    bootloader = BOOTLOADER_OFFSET[chip_name]  # Use the chip type in the bootloader
+    f.end = flash_size
+    app_size = 0  # Unknown app size
+
+    def check_boot(det: str | int, boot: str | int, what: str):
+        if det and det != boot:
+            warning(f"Detected {what} ({det}) is different from bootloader ({boot}).")
+
+    check_boot(detected_chip_name, chip_name, "chip")
+    check_boot(detected_flash_size // MB, flash_size // MB, "flash size")
+    return Esp32Params(filename, f, chip_name, flash_size, app_size, bootloader, True)  # type: ignore
 
 
 def open_esp32_image(filename: str) -> Esp32Params:
@@ -186,7 +193,7 @@ class Esp32Image(Esp32Params):
     def table(self) -> PartitionTable:
         """Load, check and return a `PartitionTable` from an `ESP32Image` object."""
         fin = self.file
-        fin.seek(PartitionTable.PART_TABLE_OFFSET - self.offset)
+        fin.seek(PartitionTable.PART_TABLE_OFFSET)
         data = fin.read(PartitionTable.PART_TABLE_SIZE)
         table = PartitionTable(self.flash_size, self.chip_name)
         table.from_bytes(data)
@@ -195,15 +202,28 @@ class Esp32Image(Esp32Params):
 
     def _get_part(self, part: Part | str) -> Part:
         if part == "bootloader":
-            offset, size = (BOOTLOADER_OFFSET[self.chip_name], BOOTLOADER_SIZE)
-            return Part(b"", 0, -1, offset, size, b"bootloader", 0)
+            return Part(b"", 0, -1, self.bootloader, BOOTLOADER_SIZE, b"bootloader", 0)
         return part if isinstance(part, Part) else self.table.by_name(part)
+
+    def _check_app_image(self, data: ByteString, name: str) -> bool:
+        """Check that the `data` is a valid app image for this device/firmware."""
+        chip_name, flash_size = _chip_flash_size(data)
+        if not chip_name:  # `data` is not an app image
+            return False
+        if chip_name != (y := self.chip_name):
+            raise ValueError(
+                f"'{name}': App image chip type ({chip_name}) "
+                f"does not match firmware ({y})."
+            )
+        if name == "bootloader" and flash_size != (y := self.flash_size):
+            warning(f"'{name}': App {flash_size=} does not match bootloader ({y}).")
+        return True
 
     def save_app_image(self, output: str) -> int:
         """Read the app image from the device and write it to a file."""
         with open(output, "wb") as fout:
             fin = self.file
-            fin.seek(self.table.app_part.offset - self.offset)
+            fin.seek(self.table.app_part.offset)
             fout.write(fin.read())
             return fout.tell()
 
@@ -214,7 +234,7 @@ class Esp32Image(Esp32Params):
         if part.offset >= self.size:
             return
         f = self.file
-        f.seek(part.offset - self.offset)
+        f.seek(part.offset)
         size = min(size, part.size) if size else part.size
         if isinstance(f, EspDeviceFileWrapper):
             f.erase(size)  # Bypass write() to erase the flash
@@ -227,7 +247,7 @@ class Esp32Image(Esp32Params):
         if part.offset >= self.size:
             raise ValueError(f"Partition '{part.name}' is outside image.")
         f = self.file
-        f.seek(part.offset - self.offset)
+        f.seek(part.offset)
         return f.read(part.size)
 
     def read_part_to_file(self, part: Part | str, output: str) -> int:
@@ -240,12 +260,12 @@ class Esp32Image(Esp32Params):
     def write_part(self, part: Part | str, data: ByteString) -> int:
         """Write contents of `data` into the `part` partition in `image`."""
         part = self._get_part(part)
-        if part.type_name == "app" and not _check_app_image(data, part.name, self):
+        if part.type_name == "app" and not self._check_app_image(data, part.name):
             raise ValueError(f"Attempt to write invalid app image to '{part.name}'.")
         if part.offset >= self.size:
             raise ValueError(f"Partition '{part.name}' is outside image.")
         f = self.file
-        f.seek(part.offset - self.offset)
+        f.seek(part.offset)
         return f.write(data)
 
     def write_part_from_file(self, part: Part | str, input: str) -> int:
@@ -258,17 +278,15 @@ class Esp32Image(Esp32Params):
             )
         return self.write_part(part, Path(input).read_bytes())
 
-    def check_app_partitions(self) -> None:
+    def check_app_partitions(self, new_table: PartitionTable) -> None:
         """Check that the app partitions contain valid app image signatures."""
         f = self.file
         for part in (
-            p
-            for p in self.table
-            if p.type_name == "app" and (p.offset - self.offset) < self.size
+            p for p in new_table if p.type_name == "app" and p.offset < self.size
         ):
             # Check there is an app at the start of the partition
-            f.seek(part.offset - self.offset)
-            if not _check_app_image(f.read(1 * B), part.name, self):
+            f.seek(part.offset)
+            if not self._check_app_image(f.read(1 * B), part.name):
                 warning(f"Partition '{part.name}': App image signature not found.")
             else:
                 action(f"Partition '{part.name}' App image signature found.")
@@ -290,16 +308,16 @@ class Esp32Image(Esp32Params):
     def update_flash_size(self, flash_size: int) -> None:
         """Update the bootloader header with the `flash_size`, if it has changed."""
         f = self.file
-        f.seek(self.offset)  # Bootloader is self.offset from start of file
+        f.seek(self.bootloader)  # Bootloader is offset from start
         header = bytearray(f.read(1 * B))  # Need to write whole blocks
         _set_header_flash_size(header, flash_size)
-        f.seek(self.offset)
+        f.seek(self.bootloader)
         f.write(header)
 
     def write_table(self, table: PartitionTable) -> None:
         """Write a new `PartitionTable` to the flash storage or firmware file."""
         f = self.file
-        f.seek(table.PART_TABLE_OFFSET - self.offset)
+        f.seek(table.PART_TABLE_OFFSET)
         f.write(table.to_bytes())
 
     def update_table(self, table: PartitionTable) -> None:
@@ -312,6 +330,6 @@ class Esp32Image(Esp32Params):
         if table.flash_size != self.flash_size:
             action(f"Setting flash_size in bootloader to {table.flash_size//MB}MB...")
             self.update_flash_size(table.flash_size)
-        self.check_app_partitions()  # Check app partitions for valid app signatures
+        self.check_app_partitions(table)  # Check app parts for valid app signatures
         self.check_data_partitions(table)  # Erase data partitions which have changed
         self.table = table

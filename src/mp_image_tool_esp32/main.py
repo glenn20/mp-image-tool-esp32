@@ -169,16 +169,18 @@ def process_arguments() -> None:
         table = layouts.from_csv(table, args.from_csv)
         extension += "-CSV"
 
-    if args.table:  # --table nvs=7B,factory=2M,vfs=0
+    if args.table:  # --table default|ota|nvs=7B,factory=2M,vfs=0
         if args.table == [("ota", "", 0, 0)]:
+            # ota_layout returns a string, so parse it into a PartList
             args.table = parse_args.partlist(layouts.ota_layout(table, args.app_size))
             extension += "-OTA"
         elif args.table == [("default", "", 0, 0)]:
+            # DEFAULT_TABLE_LAYOUT is a string, so parse it into a PartList
             args.table = parse_args.partlist(layouts.DEFAULT_TABLE_LAYOUT)
             extension += "-DEFAULT"
         else:
             extension += "-TABLE"
-        # Break up the value string into a partition table layout
+        # Build a partition table from the PartList
         table = layouts.new_table(table, args.table)
         table.check()
 
@@ -244,7 +246,7 @@ def process_arguments() -> None:
             image.erase_part(part, 4 * B)
 
     if args.read:  # --read NAME1=FILE1[,...]: Read contents of parts into FILES
-        if not image.is_device:
+        if not image.is_device:  # TODO: support reading from a firmware file
             raise ValueError("--read requires an esp32 device")
         for name, filename in args.read:
             action(f"Saving partition '{name}' into '{filename}'...")
@@ -266,7 +268,7 @@ def process_arguments() -> None:
         ota_update.ota_update(image, args.ota_update, args.no_rollback)
 
     if args.check:  # --check : Check the partition table and app images are valid
-        image.check_app_partitions()
+        image.check_app_partitions(image.table)
         try:
             ota = ota_update.OTAUpdater(image)
             info(f"Current OTA boot partition: {ota.current().name}")
