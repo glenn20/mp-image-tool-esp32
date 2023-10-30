@@ -214,11 +214,11 @@ class Esp32Image(Esp32Params):
         if part.offset >= self.size:
             return
         f = self.file
+        f.seek(part.offset - self.offset)
         size = min(size, part.size) if size else part.size
         if isinstance(f, EspDeviceFileWrapper):
-            f.erase(part.offset, size)  # Bypass write() to erase the flash
+            f.erase(size)  # Bypass write() to erase the flash
         else:
-            f.seek(part.offset - self.offset)
             f.write(b"\xff" * size)
 
     def read_part(self, part: Part | str) -> bytes:
@@ -262,7 +262,9 @@ class Esp32Image(Esp32Params):
         """Check that the app partitions contain valid app image signatures."""
         f = self.file
         for part in (
-            p for p in self.table if p.type_name == "app" and p.offset < self.size
+            p
+            for p in self.table
+            if p.type_name == "app" and (p.offset - self.offset) < self.size
         ):
             # Check there is an app at the start of the partition
             f.seek(part.offset - self.offset)
