@@ -94,7 +94,7 @@ def esptool(port: str, command: str, size: int = 0) -> str:
             debug(s, end="")  # Show output as it happens if debug==True
     output = output.strip()
     if p.stderr and (stderr := p.stderr.read().strip()):
-        error(stderr, end="")
+        error(stderr)
     err = p.poll()
     if err and not (err == 1 and output.endswith("set --after option to 'no_reset'.")):
         # Ignore the "set --after" warning message and ercode for esp32s2.
@@ -120,13 +120,20 @@ class EspDeviceFileWrapper(io.RawIOBase):
         with NamedTemporaryFile("w+b", prefix="mp-image-tool-esp32-") as f:
             cmd = f"read_flash {self.pos:#x} {nbytes:#x} {f.name}"
             esptool(self.port, cmd, size=nbytes)
-            return f.read()
+            data = f.read()
+            if len(data) != nbytes:
+                raise ValueError(
+                    f"Read {len(data)} bytes from device, expected {nbytes}."
+                )
+            self.pos += len(data)
+            return data
 
     def write(self, data: bytes) -> int:  # type: ignore
         with NamedTemporaryFile("w+b", prefix="mp-image-tool-esp32-") as f:
             f.write(data)
             f.flush()
             esptool(self.port, f"write_flash -z {self.pos:#x} {f.name}", size=len(data))
+            self.pos += len(data)
             return len(data)
 
     def seek(self, pos: int, whence: int = 0):
@@ -146,6 +153,7 @@ class EspDeviceFileWrapper(io.RawIOBase):
         """Read bytes from the device flash storage using `esptool.py`.
         Offset should be a multiple of 0x1000 (4096), the device block size"""
         esptool(self.port, f"erase_region {self.pos:#x} {size:#x}")
+        self.pos += size
 
 
 def esp32_device_detect(device: str) -> tuple[str, int]:
