@@ -16,7 +16,6 @@ firmware files.
 
 import io
 import math
-import os
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
@@ -54,6 +53,7 @@ ByteString = bytes | bytearray | memoryview
 
 
 def is_device(filename: str) -> bool:
+    """Return `True` if `filename` is a serial device, else `False`."""
     return filename.startswith("/dev/") or filename.startswith("COM")
 
 
@@ -109,8 +109,9 @@ class FirmwareFileWithOffset(io.BufferedRandom):
     bytes)."""
 
     def __init__(self, file: io.BufferedRandom, offset: int = 0):
+        # Detach the raw base file from `file` and attach it to this object
         super().__init__(file.detach())
-        self.offset = offset
+        self.offset = offset  # Offset to add to seek and tell
 
     def seek(self, pos: int, whence: int = 0):
         if whence == 0:  # If seek from start of file, adjust for offset
@@ -252,8 +253,7 @@ class Esp32Image(Esp32Params):
 
     def read_part_to_file(self, part: Part | str, output: str) -> int:
         """Read contents of the `part` partition from `image` into a file"""
-        part = self._get_part(part)
-        data = self.read_part(part)  # Read the data before creating file
+        data = self.read_part(self._get_part(part))  # Read data before creating file
         with open(output, "wb") as fout:
             return fout.write(data)
 
@@ -264,19 +264,28 @@ class Esp32Image(Esp32Params):
             raise ValueError(f"Attempt to write invalid app image to '{part.name}'.")
         if part.offset >= self.size:
             raise ValueError(f"Partition '{part.name}' is outside image.")
+        if part.size < len(data):
+            raise ValueError(
+                f"Partition '{part.name}' ({part.size:#x} bytes)"
+                f" is too small for data ({len(data):#x} bytes)."
+            )
         f = self.file
         f.seek(part.offset)
-        return f.write(data)
+        pad = B - (((len(data) - 1) % B) + 1)  # Pad to block size
+        n = f.write(bytes(data) + b"\xff" * pad)
+        if n < len(data) + pad:
+            raise ValueError(f"Failed to write {len(data)} bytes to '{part.name}'.")
+        if n < part.size:
+            action("Erasing remainder of partition...")
+            if isinstance(f, EspDeviceFileWrapper):
+                f.erase(part.size - n)  # Bypass write() to erase the flash
+            else:
+                f.write(b"\xff" * (part.size - n))
+        return n - pad
 
     def write_part_from_file(self, part: Part | str, input: str) -> int:
         """Write contents of `input` file into the `part` partition in `image`."""
-        part = self._get_part(part)
-        if part.size < os.path.getsize(input):
-            raise ValueError(
-                f"Partition {part.name} ({part.size:#x} bytes)"
-                f" is too small for data ({os.path.getsize(input):#x} bytes)."
-            )
-        return self.write_part(part, Path(input).read_bytes())
+        return self.write_part(self._get_part(part), Path(input).read_bytes())
 
     def check_app_partitions(self, new_table: PartitionTable) -> None:
         """Check that the app partitions contain valid app image signatures."""
