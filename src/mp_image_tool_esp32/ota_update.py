@@ -20,8 +20,8 @@ from enum import IntEnum
 from functools import cached_property
 
 from .common import action, debug, warning
-from .image_file import Esp32Image, read_part, write_part, write_part_from_file
-from .partition_table import OTADATA_SIZE, Part, PartitionTable
+from .image_file import Esp32Image
+from .partition_table import OTADATA_SIZE, Part
 
 OTA_SIZE = 0x20  # The size of an OTA record in bytes (32 bytes)
 OTA_OFFSETS = (0, 0x1000)  # The offsets of the OTA records in the otadata partition
@@ -79,15 +79,13 @@ class OTAUpdater:
     def __init__(
         self,
         image: Esp32Image,
-        table: PartitionTable,
         no_rollback: bool = False,
     ):
         self.image = image
-        self.table = table
         self.no_rollback = no_rollback
-        self.otadata_part = self.table.by_subtype("ota")
+        self.otadata_part = self.image.table.by_subtype("ota")
 
-        data = read_part(self.image, self.otadata_part)
+        data = self.image.read_part(self.otadata_part)
         self.ota_sequence_number = max(
             ota_sequence_numbers(buf) for buf in (data[i:j] for i, j in OTA_RECORDS)
         )
@@ -96,7 +94,7 @@ class OTAUpdater:
     def _ota_app_parts(self) -> list[Part]:
         """Return a list of all the `ota` app fpartitions sorted by subtype."""
         parts = sorted(  # "ota_0", "ota_1", ... partitions
-            (p for p in self.table if p.type == 0 and 0x10 <= p.subtype < 0x20),
+            (p for p in self.image.table if p.type == 0 and 0x10 <= p.subtype < 0x20),
             key=lambda p: p.subtype,
         )
         if len(parts) < 2:
@@ -135,13 +133,11 @@ class OTAUpdater:
             ota_record(seq, OtaState.UNDEFINED if self.no_rollback else OtaState.NEW),
             ota_record(self.ota_sequence_number, OtaState.VALID),  # Old boot part
         )
-        if write_part(self.image, self.otadata_part, data) != len(data):
+        if self.image.write_part(self.otadata_part, data) != len(data):
             raise ValueError("Failed to write OTA data to otadata partition.")
 
 
-def ota_update(
-    image: Esp32Image, table: PartitionTable, firmware: str, no_rollback: bool = False
-) -> None:
+def ota_update(image: Esp32Image, firmware: str, no_rollback: bool = False) -> None:
     """Update the app firmware on an OTA-enabled esp32 device over the serial
     interface.
 
@@ -156,11 +152,11 @@ def ota_update(
     if not image.is_device:
         raise ValueError("Device is not a serial device.")
 
-    ota = OTAUpdater(image, table, no_rollback)
+    ota = OTAUpdater(image, no_rollback)
 
     new_part = ota.get_next_update()  # Get the next available OTA update partition
     action(f"Writing firmware to OTA partition {new_part.name}...")
-    write_part_from_file(image, new_part, firmware)
+    image.write_part_from_file(new_part, firmware)
 
     action("Updating otadata partition...")
     ota.set_boot(new_part)

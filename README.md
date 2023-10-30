@@ -56,31 +56,32 @@ Micropython app fills 78.8% of factory partition (421 kB free)
   or device
   - `--extract-app`: the `.app-bin` file saved can be used for OTA firmware
     updates.
-
-### Operations on serial-attached esp32 devices
-
-Use `mp-image-tool-esp32 u0` to operate on the esp32 device attached to
-`/dev/ttyUSB0`. Additional features include:
-
-- Modify the contents of partitions on the flash storage:
+- Modify the contents of partitions in the firmware:
   - `--read factory=micropython.app-bin,nvs=nvs.bin` : read contents of
     partitions into files
   - `--write factory=micropython.app-bin` : write contents of files into
     partitions
   - `--write bootloader=bootloader.bin` : load a new bootloader from file
   - `--erase nvs,otadata` : erase partitions
-  - `--erase-fs vfs` : erase 'vfs' filesystem (erases the first 4 blocks of the
-      partition)
-    - micropython will automatically build a fresh filesystem or 'nvs' partition
-      on the next boot
+
+### Operations on serial-attached esp32 devices
+
+Use `mp-image-tool-esp32 u0` to operate on the esp32 device attached to
+`/dev/ttyUSB0`. When operating on esp32 devices over a serial interface, the
+following additional commands are available:
+
+- Erase 'vfs' filesystem partitions:
+  - `--erase-fs vfs` : erases the first 4 blocks of the partition
+    - micropython will automatically build a fresh filesystem on the next boot
 - Use the `OTA` mechanism to perform a micropython firmware update over the
   serial interface to the device:
   - `--ota-update micropython.app-bin`
 
 When operating on micropython firmware files, `mp-image-tool-esp32` will create
-a copy of the firmware file with the partition table modified according to the
-options provided. The original firmware file is not modified in any way. If no
-modification options are given, it will print the partition table of `filename`.
+a copy of the firmware file with the partition table and partition contents
+modified according to the options provided. The original firmware file is not
+modified in any way. If no modification options are given, it will print the
+partition table of `filename`.
 
 When operating on serial-attached esp32 devices, `mp-image-tool-esp32` will
 automatically erase any `data` partitions (eg. `nvs`, `otadata` or `vfs/fat`)
@@ -101,7 +102,7 @@ git clone https://github.com/glenn20/mp-image-tool-esp32
 cd mp-image-tool-esp32
 ```
 
-If you use a python virtual environment, make sure it is active.
+If you use a python virtual environment (recommended), make sure it is active.
 
 To use without installing:
 
@@ -117,12 +118,20 @@ To use without installing:
   ./mp-image-tool-esp32 ~/Downloads/ESP32_GENERIC-20231005-v1.21.0.bin
   ```
 
-To install in your python environment:
+or, to install in your python environment:
 
-```bash
-python -m build
-pip install dist/mp_image_tool_esp32*.whl
-```
+- Install in "editable mode":
+
+  ```bash
+  pip install -e .
+  ```
+
+- OR build and install a distributable `.whl` package
+
+  ```bash
+  python -m build
+  pip install dist/mp_image_tool_esp32*.whl
+  ```
 
 ## Examples
 
@@ -297,9 +306,9 @@ OTA-enabled devices include those which:
 - have been flashed with `OTA` enabled firmware files (see [Firmware for OTA
   updates](
   https://github.com/glenn20/micropython-esp32-ota#micropython-firmware-for-ota-updates)):
-  - produced by `mp-image-tool-esp32 filename --table ota` or
   - downloaded from
-    [micropython.org](https://micropython.org/download?port=esp32).
+    [micropython.org](https://micropython.org/download?port=esp32) or
+  - produced by `mp-image-tool-esp32 filename --table ota`.
 
 ### OTA Rollback
 
@@ -382,8 +391,10 @@ options:
                         size of flash for new partition table
   -a SIZE, --app-size SIZE
                         size of factory and ota app partitions
+  --check               check app partitions and OTA config are valid
   --no-rollback         disable ota rollback on firmware update with --ota Use this if
                         bootloader or app don't support rollback.
+  --baud RATE           baud rate for serial port (default: 460800)
   --ota-update FILE     perform an OTA firmware updgrade over the serial port
   --from-csv FILE       load new partition table from CSV file
   --table ota/default/NAME1=SUBTYPE:SIZE[,NAME2,...]

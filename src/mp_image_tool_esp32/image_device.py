@@ -15,40 +15,54 @@ import os
 import re
 from subprocess import PIPE, CalledProcessError, Popen
 from tempfile import NamedTemporaryFile
-from typing import IO
+from typing import IO, Any
 
 import tqdm
 from colorama import Fore
 
-from .common import KB, MB, Levels, debug, error, verbosity
+from .common import KB, MB, Levels, debug, error, info, verbosity
 
-esptool_args: str = "--baud 460800"  # Default arguments for the esptool.py commands
+BAUDRATES = (115200, 230400, 460800, 921600, 1500000, 2000000, 3000000)
 
-tqdm_args = {
+baudrate = 460800  # Default baudrate for esptool.py
+
+esptool_args: str = ""  # Default arguments for the esptool.py commands
+
+tqdm_args: dict[str, Any] = {
     "ascii": " =",
     "bar_format": (
-        Fore.GREEN
+        Fore.CYAN
         + "{l_bar}{bar}| "
-        + Fore.CYAN
+        + Fore.GREEN
         + "{n:,}/{total:,}kB {rate_fmt}"
         + Fore.RESET
     ),
 }
 
 # Regexp to match progress messages printed out by esptool.py
-# match[2] is the number of bytes read/written, match[1] is "" for reads
-# Matches: "Writing at 0x0002030... (2 %)\r" and "1375 (1 %)\r" at end of output
+# match[1] is "" for reads and "Writing at " for writes
+# match[2] is the number of bytes read/written,
+# match[3] is the percentage complete
+# Matches: "Writing at 0x0002030... (2 %)\x08" and "1375 (1 %)\x08" at end of output
 PROGRESS_MESSAGE_REGEXP = re.compile(
-    r"(Writing at )?((0x)?[0-9a-f]+)[.]* *\([0-9]+ *%\)[\n\r\x08]$"
+    r"(Writing at )?((0x)?[0-9a-f]+)[.]* *\(([0-9]+) *%\)[\n\r\x08]$"
 )
 
 
+def set_baudrate(baud: int) -> int:
+    """Set the baudrate for `esptool.py` to the highest value <= `baud`."""
+    global baudrate
+    baudrate = next(i for i in sorted(BAUDRATES, reverse=True) if i <= baud)
+    info(f"Using baudrate {baudrate}")
+    return baudrate
+
+
 def esptool_progress_bar(stdout: IO[str], size: int) -> str:
-    """Use a tqdm progress bar to show progress of esptool.py reads and writes.
-    Monitors command output from `stdout` and updates the progress bar
+    """Use a tqdm progress bar to show progress of `esptool.py` reads and
+    writes. Monitors command output from `stdout` and updates the progress bar
     when progress updates are received."""
     offset, output = 0, ""
-    with tqdm.trange(0, size // KB, unit="kB", **tqdm_args) as pbar:  # type: ignore
+    with tqdm.trange(0, size // KB, unit="kB", **tqdm_args) as pbar:
         while stdout and (s := stdout.read(1)):
             output += s
             if (
@@ -56,17 +70,18 @@ def esptool_progress_bar(stdout: IO[str], size: int) -> str:
                 and (match := re.search(PROGRESS_MESSAGE_REGEXP, output))  # and a match
                 and (n := int(match[2], 0) // KB) > pbar.n  # and number has increased
             ):
-                # On writes, the first number is an offset - need to subtract
+                # On writes, the first number is a starting value - need to subtract
                 offset = offset or (n if match[1] else 0)
                 pbar.update((n - offset - pbar.n))  # Update the progress bar
         pbar.update((size // KB) - pbar.n)  # A final update to make sure we hit 100%
         return output
 
 
-def exec_esptool(cmd: str, size: int = 0) -> str:
-    """Run the esptool.py command `cmd` and return the output as a string.
+def esptool(port: str, command: str, size: int = 0) -> str:
+    """Run the `esptool.py` command and return the output as a string.
     A tqdm progress bar is shown for read/write greater than 16KB.
-    Errors in the esptool.py command are raised as a CalledProcessError."""
+    Errors in the `esptool.py` command are raised as a `CalledProcessError`."""
+    cmd = f"esptool.py {esptool_args} --baud {baudrate} --port {port} {command}"
     debug("$", cmd)  # Use Popen() so we can monitor progress messages in the output
     p = Popen(cmd, shell=True, stdout=PIPE, stderr=PIPE, text=True, bufsize=0)
     output, stderr = "", ""
@@ -79,54 +94,18 @@ def exec_esptool(cmd: str, size: int = 0) -> str:
             debug(s, end="")  # Show output as it happens if debug==True
     output = output.strip()
     if p.stderr and (stderr := p.stderr.read().strip()):
-        error(stderr, end="")
+        error(stderr)
     err = p.poll()
     if err and not (err == 1 and output.endswith("set --after option to 'no_reset'.")):
         # Ignore the "set --after" warning message and ercode for esp32s2.
         # If we add "--after no_reset", reconnects to the device fail repeatedly
+        error(f"Error: {cmd} returns error {err}.")
+        if stderr:
+            print(stderr)
+        if output:
+            print(output)
         raise CalledProcessError(p.returncode, cmd, output, stderr)
     return output
-
-
-def esptool(port: str, command: str, size: int = 0) -> str:
-    """Convenience function for calling an esptool.py command."""
-    global esptool_args
-    try:
-        cmd = f"esptool.py {esptool_args} --port {port} {command}"
-        return exec_esptool(cmd, size)
-    except CalledProcessError as err:
-        error(f"Error: {err.cmd} returns error {err.returncode}.")
-        if err.stderr:
-            print(err.stderr)
-        if err.stdout:
-            print(err.stdout)
-        raise err
-    return ""
-
-
-def erase_flash(filename: str, offset: int, size: int) -> None:
-    """Read bytes from the device flash storage using `esptool.py`.
-    Offset should be a multiple of 0x1000 (4096), the device block size"""
-    esptool(filename, f"erase_region {offset:#x} {size:#x}")
-
-
-def read_flash(filename: str, offset: int, size: int) -> bytes:
-    """Read bytes from the device flash storage using esptool.py
-    Offset should be a multiple of 0x1000 (4096), the device block size"""
-    with NamedTemporaryFile("w+b", prefix="mp-image-tool-esp32-") as f:
-        esptool(filename, f"read_flash {offset:#x} {size:#x} {f.name}", size=size)
-        return f.read()
-
-
-def write_flash(filename: str, offset: int, data: bytes) -> int:
-    """Write bytes to the device flash storage using `esptool.py`
-    Offset should be a multiple of 0x1000 (4096), the device block size"""
-    mv = memoryview(data)
-    with NamedTemporaryFile("w+b", prefix="mp-image-tool-esp32-") as f:
-        f.write(data)
-        f.flush()
-        esptool(filename, f"write_flash -z {offset:#x} {f.name}", size=len(data))
-    return len(mv)
 
 
 class EspDeviceFileWrapper(io.RawIOBase):
@@ -135,21 +114,27 @@ class EspDeviceFileWrapper(io.RawIOBase):
     writing."""
 
     def __init__(self, name: str):
-        self.port = name
-        self.pos = 0
-        self.end = 0
+        self.port, self.pos, self.end = name, 0, 0
 
     def read(self, nbytes: int = 0x1000) -> bytes:
-        return read_flash(self.port, self.pos, nbytes)
-
-    def readinto(self, data: bytes) -> int:  # type: ignore
-        mv = memoryview(data)
-        b = read_flash(self.port, self.pos, len(mv))
-        mv[: len(b)] = b
-        return len(b)
+        with NamedTemporaryFile("w+b", prefix="mp-image-tool-esp32-") as f:
+            cmd = f"read_flash {self.pos:#x} {nbytes:#x} {f.name}"
+            esptool(self.port, cmd, size=nbytes)
+            data = f.read()
+            if len(data) != nbytes:
+                raise ValueError(
+                    f"Read {len(data)} bytes from device, expected {nbytes}."
+                )
+            self.pos += len(data)
+            return data
 
     def write(self, data: bytes) -> int:  # type: ignore
-        return write_flash(self.port, self.pos, data)
+        with NamedTemporaryFile("w+b", prefix="mp-image-tool-esp32-") as f:
+            f.write(data)
+            f.flush()
+            esptool(self.port, f"write_flash -z {self.pos:#x} {f.name}", size=len(data))
+            self.pos += len(data)
+            return len(data)
 
     def seek(self, pos: int, whence: int = 0):
         self.pos = [0, self.pos, self.end][whence] + pos
@@ -164,8 +149,11 @@ class EspDeviceFileWrapper(io.RawIOBase):
     def seekable(self) -> bool:
         return True
 
-    def erase(self, offset: int, size: int) -> None:
-        erase_flash(self.port, offset, size)
+    def erase(self, size: int) -> None:
+        """Read bytes from the device flash storage using `esptool.py`.
+        Offset should be a multiple of 0x1000 (4096), the device block size"""
+        esptool(self.port, f"erase_region {self.pos:#x} {size:#x}")
+        self.pos += size
 
 
 def esp32_device_detect(device: str) -> tuple[str, int]:
