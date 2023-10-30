@@ -106,21 +106,21 @@ usage = """
                         | resize partitions \
                             eg. --resize factory=2M,nvs=5B,vfs=0. \
                             If SIZE is 0, expand partition to available space
-    --erase NAME1[,NAME2] | erase the named partitions on device flash storage
+    --erase NAME1[,NAME2] | erase the named partitions
     --erase-fs NAME1[,NAME2] \
                         | erase first 4 blocks of a partition on flash storage.\
                             Micropython will initialise filesystem on next boot.
     --read NAME1=FILE1[,NAME2=FILE2,bootloader=FILE,...] \
-                        | copy partition contents (or bootloader) to file
+                        | copy partition contents (or bootloader) to file.
     --write NAME1=FILE1[,NAME2=FILE2,bootloader=FILE,...] \
                         | write file(s) contents into partitions \
-                            (or bootloader) on the device flash storage.
+                            (or bootloader) in the firmware.
 
     Where SIZE is a decimal or hex number with an optional suffix (M=megabytes,
     K=kilobytes, B=blocks (0x1000=4096 bytes)).
 
-    Options --erase, --erase-fs, --read and --write can only be
-    used when operating on serial-attached devices (not firmware files).
+    Options --erase-fs and --ota-update can only be used when operating on
+    serial-attached devices (not firmware files).
 """
 
 
@@ -227,8 +227,6 @@ def process_arguments() -> None:
     ## For erasing/reading/writing flash storage partitions
 
     if args.erase:  # --erase NAME1[,NAME2,...] : Erase partition
-        if not image.is_device:
-            raise ValueError("--erase requires an esp32 device")
         for name, *_ in args.erase:
             action(f"Erasing partition '{name}'...")
             part = image.table.by_name(name)
@@ -246,16 +244,12 @@ def process_arguments() -> None:
             image.erase_part(part, 4 * B)
 
     if args.read:  # --read NAME1=FILE1[,...]: Read contents of parts into FILES
-        if not image.is_device:  # TODO: support reading from a firmware file
-            raise ValueError("--read requires an esp32 device")
         for name, filename in args.read:
             action(f"Saving partition '{name}' into '{filename}'...")
             n = image.read_part_to_file(name, filename)
             info(f"Wrote {n:#x} bytes to '{filename}'.")
 
     if args.write:  # --write NAME1=FILE1[,...] : Write FILES into partitions
-        if not image.is_device:
-            raise ValueError("--write requires an esp32 device")
         for name, filename in args.write:
             action(f"Writing partition '{name}' from '{filename}'...")
             n = image.write_part_from_file(name, filename)
