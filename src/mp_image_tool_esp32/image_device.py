@@ -10,12 +10,13 @@ If `common.debug` is set True, all esptool.py commands and output are printed to
 stdout.
 """
 
-import io
+from __future__ import annotations
+
 import os
 import re
 from subprocess import PIPE, CalledProcessError, Popen
 from tempfile import NamedTemporaryFile
-from typing import IO, Any
+from typing import IO, Any, BinaryIO
 
 import tqdm
 from colorama import Fore
@@ -108,18 +109,21 @@ def esptool(port: str, command: str, size: int = 0) -> str:
     return output
 
 
-class EspDeviceFileWrapper(io.RawIOBase):
+class Esp32DeviceFileWrapper(BinaryIO):
     """A virtual file-like wrapper around the flash storage on an esp32 device.
     This allows the device to be used as a file-like object for reading and
-    writing."""
+    writing. Uses `esptool.py` to read and write data to/from the attached
+    device."""
 
     def __init__(self, name: str):
+        if not os.path.exists(name):
+            raise FileNotFoundError(f"No such device: '{name}'")
         self.port, self.pos, self.end = name, 0, 0
 
-    def read(self, nbytes: int = 0x1000) -> bytes:
+    def read(self, nbytes: int | None = None) -> bytes:
         with NamedTemporaryFile("w+b", prefix="mp-image-tool-esp32-") as f:
             cmd = f"read_flash {self.pos:#x} {nbytes:#x} {f.name}"
-            esptool(self.port, cmd, size=nbytes)
+            esptool(self.port, cmd, size=nbytes or 0x1000)
             data = f.read()
             if len(data) != nbytes:
                 raise ValueError(
@@ -137,7 +141,7 @@ class EspDeviceFileWrapper(io.RawIOBase):
             return len(data)
 
     def seek(self, pos: int, whence: int = 0):
-        self.pos = [0, self.pos, self.end][whence] + pos
+        self.pos = (0, self.pos, self.end)[whence] + pos
         return self.pos
 
     def tell(self) -> int:
@@ -149,24 +153,22 @@ class EspDeviceFileWrapper(io.RawIOBase):
     def seekable(self) -> bool:
         return True
 
+    # Some additional convenience methods
     def erase(self, size: int) -> None:
-        """Read bytes from the device flash storage using `esptool.py`.
-        Offset should be a multiple of 0x1000 (4096), the device block size"""
+        """Erase a region of the device flash storage using `esptool.py`.
+        Size should be a multiple of `0x1000 (4096)`, the device block size"""
         esptool(self.port, f"erase_region {self.pos:#x} {size:#x}")
         self.pos += size
 
-
-def esp32_device_detect(device: str) -> tuple[str, int]:
-    """Auto detect and return (as a tuple) the `chip_name` and `flash_size`
-    attached to `device`."""
-    if not os.path.exists(device):
-        raise FileNotFoundError(f"No such device: '{device}'")
-    output = esptool(device, "flash_id")
-    match = re.search(r"^Detecting chip type[. ]*(ESP.*)$", output, re.MULTILINE)
-    chip_name: str = match.group(1).lower().replace("-", "") if match else ""
-    match = re.search(r"^Detected flash size: *([0-9]*)MB$", output, re.MULTILINE)
-    flash_size = int(match.group(1)) * MB if match else 0
-    if chip_name:
-        global esptool_args
-        esptool_args = " ".join((esptool_args, "--chip", chip_name))
-    return chip_name, flash_size
+    def autodetect(self) -> tuple[str, int]:
+        """Auto detect and return (as a tuple) the `chip_name` and `flash_size`
+        attached to the serial device."""
+        output = esptool(self.port, "flash_id")
+        match = re.search(r"^Detecting chip type[. ]*(ESP.*)$", output, re.MULTILINE)
+        chip_name: str = match.group(1).lower().replace("-", "") if match else ""
+        match = re.search(r"^Detected flash size: *([0-9]*)MB$", output, re.MULTILINE)
+        flash_size = int(match.group(1)) * MB if match else 0
+        if chip_name:
+            global esptool_args
+            esptool_args = " ".join((esptool_args, "--chip", chip_name))
+        return chip_name, flash_size

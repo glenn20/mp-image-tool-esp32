@@ -23,11 +23,7 @@ from . import image_device, image_file, layouts, ota_update, parse_args
 from .common import KB, MB, B, Levels, action, error, info, set_verbosity, verbosity
 from .image_file import Esp32Image
 from .partition_table import NAME_TO_TYPE, PartitionError, PartitionTable
-
-# Convenient type aliases for static type checking of arguments
-ArgList = list[list[str]]
-# List of Partition tuples: [(name, subtype, offset, size), ...]
-PartList = list[tuple[str, str, int, int]]
+from .types import ArgList, PartList
 
 
 # `TypedNamespace` and the `usage` string together provide three things:
@@ -36,7 +32,7 @@ PartList = list[tuple[str, str, int, int]]
 # 2. *automatic* conversion of string arguments to the correct type (using the
 #    `type=` keyword of `argparse.add_argument()`).
 # 3. an overly-elaborate method for avoiding the boilerplate of
-#    `argparse.add_argument()` which also makes the command usage much easier
+#    `argparse.add_argument()` which also makes the command usage easier
 #    for humans to parse from the code.
 #
 # `TypedNamespace` must include a field for each (non-`str`) optional argument

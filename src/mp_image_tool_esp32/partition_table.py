@@ -14,7 +14,7 @@ from __future__ import annotations
 import hashlib
 import struct
 from functools import cached_property
-from typing import Generator, NamedTuple
+from typing import Generator, List, NamedTuple
 
 from .common import KB, MB
 
@@ -27,18 +27,19 @@ FIRST_PART_OFFSET = 0x9_000  # Offset of the first partition in flash
 APP_PART_OFFSET = 0x10_000  # Expected offset of application in flash
 OTADATA_SIZE = 0x2_000  # Required size of the otadata partition for OTA images
 
-# Map from partition subtype names to (type, subtype)
+# Map between partition types/subtypes and names
 # Partition subtype names are unique across app and data types
+TYPE_TO_NAME = {0: "app", 1: "data"}
+NAME_TO_TYPE = {name: typ for typ, name in TYPE_TO_NAME.items()}
 SUBTYPES: dict[str, tuple[int, int]] = {
     "factory": (0, 0),
     "ota": (1, 0),
     "phy": (1, 1),
     "nvs": (1, 2),
     "fat": (1, 129),
-} | {f"ota_{i}": (int(0), i + 16) for i in range(16)}
-TYPE_TO_NAME = {0: "app", 1: "data"}
-NAME_TO_TYPE = {type: name for name, type in TYPE_TO_NAME.items()}
-SUBTYPE_TO_NAME = {types: name for name, types in SUBTYPES.items()}
+}
+SUBTYPES.update({f"ota_{i}": (int(0), i + 16) for i in range(16)})
+SUBTYPE_TO_NAME = {typ: name for name, typ in SUBTYPES.items()}
 
 # Partition table offsets and sizes
 PART_FMT = b"<2sBBLL16sL"  # Struct format to read a partition from partition table
@@ -51,12 +52,8 @@ PART_NAME_LEN = 16  # Length of the Partition label
 class PartitionError(Exception):
     "Raised if an error occurs while reading or building a PartitionTable."
 
-    def __init__(
-        self,
-        msg: str = "Error in partition table.",
-        table: PartitionTable | None = None,
-    ) -> None:
-        super().__init__(msg)
+    def __init__(self, msg: str, table: PartitionTable | None = None) -> None:
+        super().__init__(msg or "Error in partition table.")
         self.table = table
 
 
@@ -104,7 +101,7 @@ class Part(PartTuple):
         return SUBTYPE_TO_NAME.get((self.type, self.subtype), str(self.subtype))
 
 
-class PartitionTable(list[Part]):
+class PartitionTable(List[Part]):
     """A class to hold a list of partitions (`Part`) in a partition table."""
 
     # Copy the default flash layout values

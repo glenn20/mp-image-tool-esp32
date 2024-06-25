@@ -23,6 +23,8 @@ Also includes some argument type conversion helper functions:
 - `unsplit(arglist)`: Join a list of lists of strings or ints back into a single
   string.
 """
+from __future__ import annotations
+
 import re
 import typing
 from argparse import ArgumentParser, Namespace
@@ -30,6 +32,7 @@ from itertools import takewhile
 from typing import Any, Iterable
 
 from .common import KB, MB, B
+from .types import ArgList, PartList
 
 actions = {
     "S": "store",
@@ -67,7 +70,7 @@ def numeric_arg(arg: str) -> int:
     return int(arg, 0) * unit  # Allow numbers in decimal or hex
 
 
-def arglist(arg: str) -> list[list[str]]:
+def arglist(arg: str) -> ArgList:
     """Split command line arguments into a list of list of strings.
     The string is delimited first by "," and then by "=", ":" or "-".
     eg: `"nvs=nvs.bin,vfs=vfs.bin"` -> `[["nvs", "nvs.bin"], ["vfs", "vfs.bin"]]`
@@ -75,7 +78,7 @@ def arglist(arg: str) -> list[list[str]]:
     return [re.split(DELIMITERS[1], s) for s in re.split(DELIMITERS[0], arg.strip())]
 
 
-def partlist(arg: str) -> list[tuple[str, str, int, int]]:
+def partlist(arg: str) -> PartList:
     """Split a command line argument into a list of tuples describing a
     Partition: `[(name, subtype_name, offset, size),...]`.
 
@@ -148,13 +151,11 @@ def parser(usage: str, typed_namespace: Namespace | None = None) -> ArgumentPars
     type_mapper = getattr(typed_namespace, "type_mapper", {})
 
     # For each line of arguments, split into fields and add to the parser.
-    for args, help, action in [  # list[str], str, str
-        (argstr.split(), help, action)
-        for argstr, help, action, *_ in (
-            (s.strip() for s in (line + "||").split("|"))  # split into fields
-            for line in arguments.splitlines()
-        )
-    ]:
+    for argstr, help, action in (  # str, str, str
+        (s.strip() for s in f"{line}||".split("|", 3))  # split into fields
+        for line in arguments.splitlines()
+    ):
+        args = argstr.split()
         # opts contains args starting with "-" if any, else all args.
         # metavars contains trailing args not in opts.
         # "-i --input FILE" -> opts = ["-i", "--input"], metavars = ["FILE"]
@@ -162,13 +163,12 @@ def parser(usage: str, typed_namespace: Namespace | None = None) -> ArgumentPars
         opts = list(takewhile(lambda s: s.startswith("-"), args)) or args
         metavars = args[len(opts) :]
 
-        # Construct the keyword arguments for parser.add_argument...
-        kwargs: dict[str, Any] = {}
-        if len(metavars) > 1:
-            kwargs["metavar"] = metavars
-            kwargs["nargs"] = len(metavars)
-        elif len(metavars) == 1:
-            kwargs["metavar"] = metavars[0]
+        # Initialise the keyword arguments for parser.add_argument()...
+        kwargs: dict[str, Any] = (
+            dict(metavar=metavars, nargs=len(metavars))
+            if len(metavars) > 1
+            else dict(metavar=metavars[0]) if len(metavars) == 1 else dict()
+        )
 
         # Use type information in the typed_namespace to get the arg type
         name: str = opts[-1].lstrip("-").replace("-", "_")
@@ -184,6 +184,7 @@ def parser(usage: str, typed_namespace: Namespace | None = None) -> ArgumentPars
         elif typ == bool and not action:
             # default for bool, unless action or fun have been set
             action = "store_true"
+
         if action:
             # Convert from aliases in actions dict to full name
             kwargs["action"] = actions.get(action, action)

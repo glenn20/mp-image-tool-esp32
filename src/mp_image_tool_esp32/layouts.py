@@ -15,12 +15,12 @@ Provides:
 
 
 import csv
-from typing import Iterable
 
 from colorama import Fore
 
 from .common import KB, MB, Levels, verbosity
 from .partition_table import PartitionTable
+from .types import PartList
 
 # Recommended size for OTA app partitions (depends on flash_size).
 # These choices match OTA partition sizes in ports/esp32/partition-*-ota.csv.
@@ -43,7 +43,7 @@ vfs     : fat       : 0
 """
 # Mapping of partition names to default subtypes
 # Don't need to include where name==subtype as will fall back name.
-default_subtype: dict[str, str] = {
+default_subtype = {
     "otadata": "ota",
     "vfs": "fat",
     "phy_init": "phy",
@@ -63,7 +63,7 @@ def get_subtype(name: str, subtype: str) -> str:
 
 def new_table(
     table: PartitionTable,
-    table_layout: Iterable[tuple[str, str, int, int]],
+    table_layout: PartList,
 ) -> PartitionTable:
     """Build a new partition table from the provided layout.
     For each tuple, if subtype is `""`, infer `subtype` from name."""

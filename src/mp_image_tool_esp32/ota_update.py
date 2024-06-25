@@ -18,10 +18,12 @@ import binascii
 import struct
 from enum import IntEnum
 from functools import cached_property
+from typing import List
 
 from .common import action, debug, warning
 from .image_file import Esp32Image
 from .partition_table import OTADATA_SIZE, Part
+from .types import ByteString
 
 OTA_SIZE = 0x20  # The size of an OTA record in bytes (32 bytes)
 OTA_OFFSETS = (0, 0x1000)  # The offsets of the OTA records in the otadata partition
@@ -30,7 +32,6 @@ OTA_FMT = b"<L20sLL"  # The format for reading/writing binary OTA records
 OTA_LABEL = b"\xff" * OTA_SIZE  # The expected label field in the OTA record
 OTA_CRC_INIT = 0xFFFFFFFF  # The initial value for the CRC32 checksum
 
-ByteString = bytes | bytearray | memoryview
 
 
 class OtaState(IntEnum):
@@ -91,8 +92,8 @@ class OTAUpdater:
         )
 
     @cached_property
-    def _ota_app_parts(self) -> list[Part]:
-        """Return a list of all the `ota` app fpartitions sorted by subtype."""
+    def _ota_app_parts(self) -> List[Part]:
+        """Return a list of all the `ota` app partitions sorted by subtype."""
         parts = sorted(  # "ota_0", "ota_1", ... partitions
             (p for p in self.image.table if p.type == 0 and 0x10 <= p.subtype < 0x20),
             key=lambda p: p.subtype,

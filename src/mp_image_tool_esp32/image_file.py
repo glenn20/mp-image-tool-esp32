@@ -14,16 +14,19 @@ read/write flash storage on serial-attached esp32 devices as well as esp32
 firmware files.
 """
 
+from __future__ import annotations
+
 import io
 import math
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
-from typing import IO
+from typing import BinaryIO
 
 from .common import MB, B, action, info, warning
-from .image_device import EspDeviceFileWrapper, esp32_device_detect
+from .image_device import Esp32DeviceFileWrapper
 from .partition_table import BOOTLOADER_SIZE, Part, PartitionTable
+from .types import ByteString
 
 # Fields in the image bootloader header
 APP_IMAGE_MAGIC = b"\xe9"  # Starting bytes for firmware files
@@ -49,8 +52,6 @@ BOOTLOADER_OFFSET = {
     "esp32h2": 0,
 }
 
-ByteString = bytes | bytearray | memoryview
-
 
 def is_device(filename: str) -> bool:
     """Return `True` if `filename` is a serial device, else `False`."""
@@ -70,7 +71,7 @@ def _chip_flash_size(data: ByteString) -> tuple[str, int]:
     return chip_name, flash_size
 
 
-def _load_bootloader_header(f: io.IOBase) -> tuple[str, int]:
+def _load_bootloader_header(f: BinaryIO) -> tuple[str, int]:
     """Load the bootloader header from the firmware file or serial device  and
     return the `chip_name` and `flash_size`."""
     header: bytes = f.read(HEADER_SIZE)
@@ -95,7 +96,7 @@ def _set_header_flash_size(header: bytearray, flash_size: int = 0) -> None:
 @dataclass(frozen=True)
 class Esp32Params:
     filename: str  # The name of the firmware file or device
-    file: IO[bytes]  # The file object to read/write the firmware
+    file: BinaryIO  # The file object to read/write the firmware
     chip_name: str  # esp32, esp32s2, esp32s3, esp32c2, esp32c3 or esp32c6
     flash_size: int  # Size of flash storage in bytes (from firmware header)
     app_size: int  # Size of app partition in bytes
@@ -143,34 +144,27 @@ def open_image_file(filename: str) -> Esp32Params:
 def open_image_device(filename: str) -> Esp32Params:
     """Open a serial device and return an `Esp32Image` object, which includes a
     File object wrapper around `esptool.py` to read and write to the device."""
-    f = EspDeviceFileWrapper(filename)
-    detected_chip_name, detected_flash_size = esp32_device_detect(filename)
-    f.seek(BOOTLOADER_OFFSET[detected_chip_name])
-    chip_name, flash_size = _load_bootloader_header(f)
+    f = Esp32DeviceFileWrapper(filename)
+    detected_chip_name, detected_flash_size = f.autodetect()
     info(f"Chip type: {detected_chip_name}")
     info(f"Flash size: {detected_flash_size // MB}MB")
-    bootloader = BOOTLOADER_OFFSET[chip_name]  # Use the chip type in the bootloader
-    f.end = flash_size
+    f.seek(BOOTLOADER_OFFSET[detected_chip_name])
+    chip_name, flash_size = _load_bootloader_header(f)
+    bootloader = BOOTLOADER_OFFSET[chip_name]
+    f.end = flash_size  # Use the flash size in the bootloader
     app_size = 0  # Unknown app size
 
-    def check_boot(det: str | int, boot: str | int, what: str):
-        if det and det != boot:
-            warning(f"Detected {what} ({det}) is different from bootloader ({boot}).")
-
-    check_boot(detected_chip_name, chip_name, "chip")
-    check_boot(detected_flash_size // MB, flash_size // MB, "flash size")
-    return Esp32Params(filename, f, chip_name, flash_size, app_size, bootloader, True)  # type: ignore
-
-
-def open_esp32_image(filename: str) -> Esp32Params:
-    """Open an esp32 firmware file or serial-attached device and
-    return an `Esp32Image` object, which includes a `File` object to read and
-    write to the device or file. `esptool.py` is used to read and write to
-    flash storage on serial-attached devices."""
-    if is_device(filename):
-        return open_image_device(filename)
-    else:
-        return open_image_file(filename)
+    if detected_chip_name and detected_chip_name != chip_name:
+        warning(
+            f"Detected chip type ({detected_chip_name}) is different "
+            f"from bootloader ({chip_name})."
+        )
+    if detected_flash_size and detected_flash_size != flash_size:
+        warning(
+            f"Detected flash size ({detected_flash_size}) is different "
+            f"from bootloader ({flash_size})."
+        )
+    return Esp32Params(filename, f, chip_name, flash_size, app_size, bootloader, True)
 
 
 class Esp32Image(Esp32Params):
@@ -183,7 +177,12 @@ class Esp32Image(Esp32Params):
     tables."""
 
     def __init__(self, filename: str) -> None:
-        super().__init__(**vars(open_esp32_image(filename)))
+        params = (
+            open_image_device(filename)
+            if is_device(filename)
+            else open_image_file(filename)
+        )
+        super().__init__(**vars(params))
 
     @cached_property
     def size(self) -> int:
@@ -237,7 +236,7 @@ class Esp32Image(Esp32Params):
         f = self.file
         f.seek(part.offset)
         size = min(size, part.size) if size else part.size
-        if isinstance(f, EspDeviceFileWrapper):
+        if isinstance(f, Esp32DeviceFileWrapper):
             f.erase(size)  # Bypass write() to erase the flash
         else:
             f.write(b"\xff" * size)
@@ -277,7 +276,7 @@ class Esp32Image(Esp32Params):
             raise ValueError(f"Failed to write {len(data)} bytes to '{part.name}'.")
         if n < part.size:
             action("Erasing remainder of partition...")
-            if isinstance(f, EspDeviceFileWrapper):
+            if isinstance(f, Esp32DeviceFileWrapper):
                 f.erase(part.size - n)  # Bypass write() to erase the flash
             else:
                 f.write(b"\xff" * (part.size - n))

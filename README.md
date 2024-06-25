@@ -54,7 +54,7 @@ Micropython app fills 78.8% of factory partition (421 kB free)
     with `--table ota`)
 - Extract the micropython application image (`.app-bin`) from the firmware
   or device
-  - `--extract-app`: the `.app-bin` file saved can be used for OTA firmware
+  - `--extract-app`: the extracted `.app-bin` file can be used for OTA firmware
     updates.
 - Modify the contents of partitions in the firmware:
   - `--read factory=micropython.app-bin,nvs=nvs.bin` : read contents of
