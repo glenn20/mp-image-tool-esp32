@@ -105,6 +105,57 @@ def unsplit(arglist: Iterable[Iterable[str | int]]) -> str:
     return ",".join("=".join(str(s) for s in x if s) for x in arglist)
 
 
+# A wrapper class for ArgumentParser that uses type hints from a namespace
+class TypedArgumentParser:
+    def __init__(self, parser: ArgumentParser, typed_namespace: Namespace | None):
+        self.parser = parser
+        self.typed_namespace = typed_namespace
+        # The type hints for the arguments are in the `typed_namespace`
+        self.argument_types = typing.get_type_hints(typed_namespace)
+        # `typed_namespace` may also contain a type conversion function for some types
+        self.type_mapper = getattr(typed_namespace, "_type_mapper", {})
+
+    def _get_argument_type(self, name: str) -> Any:
+        # Get the field name by replacing "-" with "_" in the last word of options
+        name = name.lstrip("-").replace("-", "_")
+        argtype = self.argument_types.get(name)  # Get the argument type hint
+        if not argtype:
+            raise ValueError(f"Argument `{name}` not found in {self.typed_namespace}")
+        # The type_mapper may contain a function to convert the argument type
+        return self.type_mapper.get(argtype, argtype)
+
+    def add_argument(self, line: str) -> None:
+        argstr, help, action, *_ = (s.strip() for s in f"{line}|||".split("|", 3))
+
+        # options contains leading words starting with "-" if any, else all words.
+        # eg. "-i --input FILE" -> opts = ["-i", "--input"], metavars = ["FILE"]
+        # eg. "filename" -> opts = ["filename"], metavars = []
+        words = argstr.split()
+        options = list(takewhile(lambda s: s.startswith("-"), words)) or words
+        metavars = words[len(options) :]  # trailing words not in options.
+        kwargs: dict[str, Any] = {}
+        if len(metavars) > 1:
+            kwargs.update({"metavar": metavars, "nargs": len(metavars)})
+        elif len(metavars) == 1:
+            kwargs.update({"metavar": metavars[0]})
+
+        # Get the type hint for the argument from the typed_namespace
+        argtype = self._get_argument_type(options[-1])
+        if argtype and argtype not in (bool, str):
+            kwargs["type"] = argtype
+        elif argtype == bool and not action:
+            # default for bool, unless action or fun have been set
+            action = "store_true"
+
+        if action:
+            # Convert from aliases in actions dict to full name
+            kwargs["action"] = actions.get(action, action)
+        if help:
+            kwargs["help"] = help
+
+        self.parser.add_argument(*options, **kwargs)
+
+
 # usage is a multiline string of the form:
 # """
 # progname
@@ -118,79 +169,40 @@ def unsplit(arglist: Iterable[Iterable[str | int]]) -> str:
 # -c --option3 NAME1,NAME2 | help string
 # ...
 # """
-# Where action is a key from actions dict above (optional).
-# dataclass is a class containing the type hints for the arguments.
-# It should have one field for each argument name provided in arguments.
+
+# Where `action` is an argparse action or an abbreviationfrom actions dict above
+# (optional). `typed_namespace` is a class containing the type hints for the
+# arguments. It should have one field for each argument name provided in
+# arguments.
 def parser(usage: str, typed_namespace: Namespace | None = None) -> ArgumentParser:
-    """Create an argparse.ArgumentParser from a string containing the prog name,
+    """Construct an argparse.ArgumentParser from a string containing the prog name,
     description, arguments and epilog.
 
     The names, metavars and help strings for each argument are extracted from
-    `arguments`. The type hints and conversion functions for each argument are
+    `usage`. The type hints and conversion functions for each argument are
     extracted from `typed_namespace`.
 
     Args:
-        usage (str): a single string containing the progname, description, \
-            arguments and epilog for the ArgumentParser as separate paragraphs.
+        usage (str): a single multi-line string containing the progname, \
+            description, arguments and epilog for the ArgumentParser as \
+            separate paragraphs.
         typed_namespace (argparse.Namespace): contains the type hints for the \
             arguments.
+
+    Returns:
+        ArgumentParser: an argparse.ArgumentParser object with the arguments added.
     """
-    # Split the arguments string up into sections: preamble, body, epilog
+    # Split the usage string up into sections: program, description, body, epilog
     prog, description, arguments, epilog = (
         paragraph.strip() for paragraph in f"{usage}\n\n".split("\n\n", 3)
     )
-    parser = ArgumentParser(
-        prog=prog,
-        description=description,
-        epilog=epilog,
+    parser = TypedArgumentParser(
+        ArgumentParser(prog=prog, description=description, epilog=epilog),
+        typed_namespace,
     )
 
-    # Mapping of argument name to type - from the typed_namespace type info
-    type_list = typing.get_type_hints(typed_namespace) if typed_namespace else {}
-    # Mapping from types to functions which convert strings to that type
-    type_mapper = getattr(typed_namespace, "type_mapper", {})
+    # Process each of the arguments in the `arguments` string (one per line)
+    for line in arguments.splitlines():
+        parser.add_argument(line)
 
-    # For each line of arguments, split into fields and add to the parser.
-    for argstr, help, action in (  # str, str, str
-        (s.strip() for s in f"{line}||".split("|", 3))  # split into fields
-        for line in arguments.splitlines()
-    ):
-        args = argstr.split()
-        # opts contains args starting with "-" if any, else all args.
-        # metavars contains trailing args not in opts.
-        # "-i --input FILE" -> opts = ["-i", "--input"], metavars = ["FILE"]
-        # "filename" -> opts = ["filename"], metavars = []
-        opts = list(takewhile(lambda s: s.startswith("-"), args)) or args
-        metavars = args[len(opts) :]
-
-        # Initialise the keyword arguments for parser.add_argument()...
-        kwargs: dict[str, Any] = (
-            dict(metavar=metavars, nargs=len(metavars))
-            if len(metavars) > 1
-            else dict(metavar=metavars[0]) if len(metavars) == 1 else dict()
-        )
-
-        # Use type information in the typed_namespace to get the arg type
-        name: str = opts[-1].lstrip("-").replace("-", "_")
-        typ: type | None = type_list.get(name)  # Get type from typed_namespace
-        if not typ:
-            raise ValueError(f"Argument `{name}` not found in {typed_namespace}")
-        if fun := type_mapper.get(typ):
-            # A type conversion function was provided in type_mapper
-            kwargs["type"] = fun
-        elif typ and typ not in (bool, str):
-            # If no function given in type_mapper, use type constructor itself
-            kwargs["type"] = typ
-        elif typ == bool and not action:
-            # default for bool, unless action or fun have been set
-            action = "store_true"
-
-        if action:
-            # Convert from aliases in actions dict to full name
-            kwargs["action"] = actions.get(action, action)
-        if help:
-            kwargs["help"] = help
-
-        parser.add_argument(*opts, **kwargs)
-
-    return parser
+    return parser.parser

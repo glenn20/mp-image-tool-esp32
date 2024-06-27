@@ -62,7 +62,7 @@ class TypedNamespace(argparse.Namespace):
     erase_fs: ArgList
     read: ArgList
     write: ArgList
-    type_mapper = {  # Map types to funcs which return type from a string arg.
+    _type_mapper = {  # Map types to funcs which return type from a string arg.
         int: parse_args.numeric_arg,  # Convert arg to an integer.
         PartList: parse_args.partlist,  # Convert arg to a list of Part tuples.
         ArgList: parse_args.arglist,  # Convert arg to a list[list[str]].
@@ -78,7 +78,7 @@ usage = """
     on esp32 devices.
 
     filename            | the esp32 firmware image filename or serial device
-    -o --output         | output filename
+    -o --output FILE    | output filename
     -q --quiet          | mute program output
     -d --debug          | print additional info
     -x --extract-app    | extract .app-bin from firmware
@@ -87,7 +87,7 @@ usage = """
     --check             | check app partitions and OTA config are valid
     --no-rollback       | disable app rollback after OTA update
     --baud RATE         | baud rate for serial port (default: 460800)
-    --ota-update FILE   | perform an OTA firmware updgrade over the serial port
+    --ota-update FILE   | perform an OTA firmware upgrade over the serial port
     --from-csv FILE     | load new partition table from CSV file
     --table ota/default/NAME1=SUBTYPE:SIZE[,NAME2,...] \
                         | create new partition table, eg: \

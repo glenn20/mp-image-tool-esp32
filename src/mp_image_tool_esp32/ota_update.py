@@ -142,7 +142,7 @@ def ota_update(image: Esp32Image, firmware: str, no_rollback: bool = False) -> N
     """Update the app firmware on an OTA-enabled esp32 device over the serial
     interface.
 
-    If `table` includes `OTA` partitions, write the app firmware in `filename`
+    If `image` includes `OTA` partitions, write the app firmware in `filename`
     to the next available `OTA` partition and set it as the next boot partition.
 
     If `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE` is enabled in the bootloader on
