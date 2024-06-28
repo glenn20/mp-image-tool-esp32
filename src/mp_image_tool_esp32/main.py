@@ -13,13 +13,14 @@ Dependencies:
 import argparse
 import copy
 import os
+import platform
 import re
 import shutil
 import sys
 
 from colorama import init as colorama_init
 
-from . import image_device, image_file, layouts, ota_update, parse_args
+from . import __version__, image_device, image_file, layouts, ota_update, parse_args
 from .common import KB, MB, B, Levels, action, error, info, set_verbosity, verbosity
 from .image_file import Esp32Image
 from .partition_table import NAME_TO_TYPE, PartitionError, PartitionTable
@@ -129,6 +130,10 @@ def process_arguments() -> None:
         Levels.DEBUG if args.debug else Levels.WARN if args.quiet else Levels.INFO
     )
 
+    info(
+        f"Running {os.path.basename(sys.argv[0])} {__version__} "
+        f"(Python version {platform.python_version()})."
+    )
     # Use u0, a0, and c0 as aliases for /dev/ttyUSB0. /dev/ttyACM0 and COM0
     input: str = args.filename  # the input firmware filename
     input = re.sub(r"^u([0-9]+)$", r"/dev/ttyUSB\1", input)
