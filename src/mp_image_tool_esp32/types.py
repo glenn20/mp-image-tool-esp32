@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import sys
 
-if sys.version_info >= (3, 9):
+if sys.version_info >= (3, 10):
     # Convenient type aliases for static type checking of arguments
     ArgList = list[list[str]]
     # List of Partition tuples: [(name, subtype, offset, size), ...]
