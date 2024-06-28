@@ -53,7 +53,7 @@ PROGRESS_MESSAGE_REGEXP = re.compile(
 def set_baudrate(baud: int) -> int:
     """Set the baudrate for `esptool.py` to the highest value <= `baud`."""
     global baudrate
-    baudrate = next(i for i in sorted(BAUDRATES, reverse=True) if i <= baud)
+    baudrate = max(filter(lambda x: x <= baud, BAUDRATES))
     info(f"Using baudrate {baudrate}")
     return baudrate
 

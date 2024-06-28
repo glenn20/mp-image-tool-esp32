@@ -23,7 +23,7 @@ from functools import cached_property
 from pathlib import Path
 from typing import BinaryIO
 
-from .common import MB, B, action, info, warning
+from .common import MB, B, action, warning
 from .image_device import Esp32DeviceFileWrapper
 from .partition_table import BOOTLOADER_SIZE, Part, PartitionTable
 from .types import ByteString
@@ -75,9 +75,10 @@ def _load_bootloader_header(f: BinaryIO) -> tuple[str, int]:
     """Load the bootloader header from the firmware file or serial device  and
     return the `chip_name` and `flash_size`."""
     header: bytes = f.read(HEADER_SIZE)
-    if (details := _chip_flash_size(header)) == ("", 0):
+    chip_name, flash_size = _chip_flash_size(header)
+    if not chip_name or not flash_size:
         raise ValueError("Invalid firmware header.")
-    return details
+    return chip_name, flash_size
 
 
 def _set_header_flash_size(header: bytearray, flash_size: int = 0) -> None:
@@ -93,7 +94,7 @@ def _set_header_flash_size(header: bytearray, flash_size: int = 0) -> None:
     )
 
 
-@dataclass(frozen=True)
+@dataclass
 class Esp32Params:
     filename: str  # The name of the firmware file or device
     file: BinaryIO  # The file object to read/write the firmware
@@ -130,8 +131,6 @@ def open_image_file(filename: str) -> Esp32Params:
     File object for reading from the firmware file."""
     f = open(filename, "r+b")
     chip_name, flash_size = _load_bootloader_header(f)
-    info(f"Chip type: {chip_name}")
-    info(f"Flash size: {flash_size // MB}MB")
     bootloader = BOOTLOADER_OFFSET[chip_name]
     if bootloader != 0:  # Is non-zero for esp32 and esp32s2 firmware files
         f = FirmwareFileWithOffset(f, bootloader)
@@ -146,8 +145,6 @@ def open_image_device(filename: str) -> Esp32Params:
     File object wrapper around `esptool.py` to read and write to the device."""
     f = Esp32DeviceFileWrapper(filename)
     detected_chip_name, detected_flash_size = f.autodetect()
-    info(f"Chip type: {detected_chip_name}")
-    info(f"Flash size: {detected_flash_size // MB}MB")
     f.seek(BOOTLOADER_OFFSET[detected_chip_name])
     chip_name, flash_size = _load_bootloader_header(f)
     bootloader = BOOTLOADER_OFFSET[chip_name]
@@ -156,13 +153,13 @@ def open_image_device(filename: str) -> Esp32Params:
 
     if detected_chip_name and detected_chip_name != chip_name:
         warning(
-            f"Detected chip type ({detected_chip_name}) is different "
-            f"from bootloader ({chip_name})."
+            f"Detected device chip type ({detected_chip_name}) is different "
+            f"from firmware bootloader ({chip_name})."
         )
     if detected_flash_size and detected_flash_size != flash_size:
         warning(
             f"Detected flash size ({detected_flash_size}) is different "
-            f"from bootloader ({flash_size})."
+            f"from firmware bootloader ({flash_size})."
         )
     return Esp32Params(filename, f, chip_name, flash_size, app_size, bootloader, True)
 
@@ -210,13 +207,16 @@ class Esp32Image(Esp32Params):
         chip_name, flash_size = _chip_flash_size(data)
         if not chip_name:  # `data` is not an app image
             return False
-        if chip_name != (y := self.chip_name):
+        if chip_name != self.chip_name:
             raise ValueError(
                 f"'{name}': App image chip type ({chip_name}) "
-                f"does not match firmware ({y})."
+                f"does not match bootloader ({self.chip_name})."
             )
-        if name == "bootloader" and flash_size != (y := self.flash_size):
-            warning(f"'{name}': App {flash_size=} does not match bootloader ({y}).")
+        if name == "bootloader" and flash_size != self.flash_size:
+            warning(
+                f"'{name}': App {flash_size=} "
+                f"does not match bootloader ({self.flash_size})."
+            )
         return True
 
     def save_app_image(self, output: str) -> int:
@@ -321,6 +321,7 @@ class Esp32Image(Esp32Params):
         _set_header_flash_size(header, flash_size)
         f.seek(self.bootloader)
         f.write(header)
+        self.flash_size = flash_size
 
     def write_table(self, table: PartitionTable) -> None:
         """Write a new `PartitionTable` to the flash storage or firmware file."""
@@ -334,10 +335,10 @@ class Esp32Image(Esp32Params):
         - update the `flash_size` in the bootloader header (if it has changed) and
         - erase any data partitions which have changed from `initial_table`."""
         action("Writing partition table...")
-        self.write_table(table)
         if table.flash_size != self.flash_size:
             action(f"Setting flash_size in bootloader to {table.flash_size//MB}MB...")
             self.update_flash_size(table.flash_size)
+        self.write_table(table)
         self.check_app_partitions(table)  # Check app parts for valid app signatures
         self.check_data_partitions(table)  # Erase data partitions which have changed
         self.table = table

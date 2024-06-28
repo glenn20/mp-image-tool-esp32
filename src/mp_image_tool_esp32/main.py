@@ -143,6 +143,8 @@ def process_arguments() -> None:
     # Open input (args.filename) from firmware file or esp32 device
     action(f"Opening {what}: {input}...")
     image: Esp32Image = Esp32Image(input)
+    info(f"Firmware Chip type: {image.chip_name}")
+    info(f"Firmware Flash size: {image.flash_size // MB}MB")
     table: PartitionTable = copy.copy(image.table)
     if image.app_size:
         x = image.app_size
