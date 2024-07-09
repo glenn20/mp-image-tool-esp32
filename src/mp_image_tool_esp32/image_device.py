@@ -21,9 +21,11 @@ from typing import IO, Any, BinaryIO
 import tqdm
 from colorama import Fore
 
-from .common import KB, MB, Levels, debug, error, info, verbosity
+from .common import KB, MB, B, Levels, debug, error, info, verbosity
 
 BAUDRATES = (115200, 230400, 460800, 921600, 1500000, 2000000, 3000000)
+
+BLOCKSIZE = B  # Default block size for erasing/writing regions of the flash storage
 
 baudrate = 460800  # Default baudrate for esptool.py
 
@@ -86,7 +88,7 @@ def esptool(port: str, command: str, size: int = 0) -> str:
     debug("$", cmd)  # Use Popen() so we can monitor progress messages in the output
     p = Popen(cmd, shell=True, stdout=PIPE, stderr=PIPE, text=True, bufsize=0)
     output, stderr = "", ""
-    if verbosity(Levels.INFO) and size > 16 * KB and p.stdout:
+    if verbosity(Levels.INFO) and size > 32 * KB and p.stdout:
         output = esptool_progress_bar(p.stdout, size)  # Show a progress bar
         debug(output)
     elif p.stdout:
