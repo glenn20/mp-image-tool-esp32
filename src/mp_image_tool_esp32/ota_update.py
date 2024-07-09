@@ -22,7 +22,7 @@ from typing import List
 
 from .common import action, debug, warning
 from .image_file import Esp32Image
-from .partition_table import OTADATA_SIZE, Part
+from .partition_table import Part
 from .types import ByteString
 
 OTA_SIZE = 0x20  # The size of an OTA record in bytes (32 bytes)
@@ -31,7 +31,6 @@ OTA_RECORDS = ((i, i + OTA_SIZE) for i in OTA_OFFSETS)  # Offset and size of OTA
 OTA_FMT = b"<L20sLL"  # The format for reading/writing binary OTA records
 OTA_LABEL = b"\xff" * OTA_SIZE  # The expected label field in the OTA record
 OTA_CRC_INIT = 0xFFFFFFFF  # The initial value for the CRC32 checksum
-
 
 
 class OtaState(IntEnum):
@@ -55,7 +54,7 @@ def ota_is_valid(seq: int, state: int, crc: int) -> bool:
     return state == OtaState.VALID and ota_crc(seq) == crc
 
 
-def ota_sequence_numbers(data: ByteString) -> int:
+def ota_sequence_number(data: ByteString) -> int:
     """Return the ota sequence number from a binary OTA record in `data` or 0 if
     the record is invalid."""
     seq, _, state, crc = struct.unpack(OTA_FMT, data)
@@ -64,14 +63,14 @@ def ota_sequence_numbers(data: ByteString) -> int:
     return seq if is_valid else 0
 
 
-def ota_record(seq: int, state: int) -> bytearray:
-    """Return a bytearray containing a binary OTA record for sequence number
+def ota_record(seq: int, state: int) -> bytes:
+    """Return a byte string containing a binary OTA record for sequence number
     `seq` and state `state`."""
-    if seq < 1 or seq > 0xFFFFFFFF:
-        return bytearray(b"\xff") * OTA_SIZE
-    data = bytearray(OTA_SIZE)
-    struct.pack_into(OTA_FMT, data, 0, seq, OTA_LABEL, state, ota_crc(seq))
-    return data
+    return (
+        struct.pack(OTA_FMT, seq, OTA_LABEL, state, ota_crc(seq))
+        if 1 <= seq <= 0xFFFFFFFF
+        else b"\xff" * OTA_SIZE
+    )
 
 
 class OTAUpdater:
@@ -88,7 +87,7 @@ class OTAUpdater:
 
         data = self.image.read_part(self.otadata_part)
         self.ota_sequence_number = max(
-            ota_sequence_numbers(buf) for buf in (data[i:j] for i, j in OTA_RECORDS)
+            ota_sequence_number(buf) for buf in (data[i:j] for i, j in OTA_RECORDS)
         )
 
     @cached_property
@@ -129,10 +128,11 @@ class OTAUpdater:
         if seq == start:
             warning(f"'{part.name}' is already set for booting.")
             return
-        data = bytearray(b"\xff") * OTADATA_SIZE
-        data[0:0x20], data[0x1000:0x1020] = (
-            ota_record(seq, OtaState.UNDEFINED if self.no_rollback else OtaState.NEW),
-            ota_record(self.ota_sequence_number, OtaState.VALID),  # Old boot part
+        data = (
+            ota_record(seq, OtaState.UNDEFINED if self.no_rollback else OtaState.NEW)
+            + b"\xff" * (0x1000 - OTA_SIZE)
+            + ota_record(self.ota_sequence_number, OtaState.VALID)
+            + b"\xff" * (0x1000 - OTA_SIZE)
         )
         if self.image.write_part(self.otadata_part, data) != len(data):
             raise ValueError("Failed to write OTA data to otadata partition.")
