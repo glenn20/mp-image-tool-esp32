@@ -7,4 +7,4 @@ Dependencies: - `colorama` for colour terminal support, - `esptool.py` for
 access to flash storage on serial-attached ESP32 devices.
 """
 
-__version__ = "0.0.2"
+__version__ = "0.0.3"
