@@ -16,6 +16,7 @@ firmware files.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import math
 from dataclasses import dataclass
@@ -23,25 +24,11 @@ from functools import cached_property
 from pathlib import Path
 from typing import BinaryIO
 
-from .common import MB, B, action, warning
-from .image_device import Esp32DeviceFileWrapper
+from .common import MB, action, debug, warning
+from .image_device import BLOCKSIZE, Esp32DeviceFileWrapper
 from .partition_table import BOOTLOADER_SIZE, Part, PartitionTable
-from .types import ByteString
 
 # Fields in the image bootloader header
-APP_IMAGE_MAGIC = b"\xe9"  # Starting bytes for firmware files
-HEADER_SIZE = 8 + 16  # Size of the image file headers
-FLASH_SIZE_OFFSET = 3  # Flash size is in high 4 bits of byte 3 in file
-CHIP_ID_OFFSET = 12  # Chip-type is in bytes 12 and 13 of file
-CHIP_IDS = {  # Map from chip ids in the image file header to esp32 chip names.
-    0: "esp32",
-    2: "esp32s2",
-    9: "esp32s3",
-    12: "esp32c2",
-    5: "esp32c3",
-    13: "esp32c6",
-    16: "esp32h2",
-}
 BOOTLOADER_OFFSET = {
     "esp32": 0x1000,  # 0x1000 bytes
     "esp32s2": 0x1000,  # 0x1000 bytes
@@ -58,40 +45,77 @@ def is_device(filename: str) -> bool:
     return filename.startswith("/dev/") or filename.startswith("COM")
 
 
-def _chip_flash_size(data: ByteString) -> tuple[str, int]:
-    """Read the `chip_name` and `flash_size` from the given image header."""
-    header = bytes(data[:HEADER_SIZE])
-    if not header.startswith(APP_IMAGE_MAGIC):
-        # warn(f"Firmware magic byte ({APP_IMAGE_MAGIC}) not found in image header.")
-        return "", 0
-    chip_id = header[CHIP_ID_OFFSET] | (header[CHIP_ID_OFFSET + 1] << 8)
-    chip_name = CHIP_IDS.get(chip_id, str(chip_id))
-    flash_id = header[FLASH_SIZE_OFFSET] >> 4
-    flash_size = (2**flash_id) * MB
-    return chip_name, flash_size
+class ImageFormat:
+    """A class to represent the esp32 firmware image format. Provides methods to
+    read and write the image header."""
 
+    # See https://docs.espressif.com/projects/esptool/en/latest/esp32
+    # /advanced-topics/firmware-image-format.html
 
-def _load_bootloader_header(f: BinaryIO) -> tuple[str, int]:
-    """Load the bootloader header from the firmware file or serial device  and
-    return the `chip_name` and `flash_size`."""
-    header: bytes = f.read(HEADER_SIZE)
-    chip_name, flash_size = _chip_flash_size(header)
-    if not chip_name or not flash_size:
-        raise ValueError("Invalid firmware header.")
-    return chip_name, flash_size
+    HEADER_SIZE = 8 + 16  # Size of the image file headers
+    APP_IMAGE_MAGIC = b"\xe9"  # Starting bytes for firmware files
+    MAGIC_OFFSET = 0  # Offset of the magic byte in the image file
+    NUM_SEGMENTS_OFFSET = 1  # Number of segments in the image file
+    FLASH_SIZE_OFFSET = 3  # Flash size is in high 4 bits of byte 3 in file
+    CHIP_ID_OFFSET = 12  # Chip-type is in bytes 12 and 13 of file
+    HASH_APPENDED_OFFSET = 23  # Offset of flag that hash is appended to end of image
+    CHIP_IDS = {  # Map from chip ids in the image file header to esp32 chip names.
+        0: "esp32",
+        2: "esp32s2",
+        9: "esp32s3",
+        12: "esp32c2",
+        5: "esp32c3",
+        13: "esp32c6",
+        16: "esp32h2",
+    }
 
+    def __init__(self, data: bytes) -> None:
+        self.data = data
+        if not self.data[self.MAGIC_OFFSET] == self.APP_IMAGE_MAGIC[0]:
+            raise ValueError("Invalid image file: magic bytes not found.")
 
-def _set_header_flash_size(header: bytearray, flash_size: int = 0) -> None:
-    """Set the `flash_size` field in the supplied image bootloader `header`."""
-    if flash_size == 0:
-        return
-    size_MB = flash_size // MB
-    if not (0 <= size_MB <= 128):
-        raise ValueError(f"Invalid flash size: {flash_size:#x}.")
-    # Flash size tag is written into top 4 bits of 4th byte of file
-    header[FLASH_SIZE_OFFSET] = (round(math.log2(size_MB)) << 4) | (
-        header[FLASH_SIZE_OFFSET] & 0xF
-    )
+    @cached_property
+    def chip_name(self) -> str:
+        """Return the chip name from the bootloader header."""
+        chip_id = self.data[self.CHIP_ID_OFFSET] | (
+            self.data[self.CHIP_ID_OFFSET + 1] << 8
+        )
+        return self.CHIP_IDS.get(chip_id, str(chip_id))
+
+    @cached_property
+    def flash_size(self) -> int:
+        """Return the flash size from the bootloader header."""
+        flash_id = self.data[self.FLASH_SIZE_OFFSET] >> 4
+        return (2**flash_id) * MB
+
+    @cached_property
+    def hash_appended(self) -> bool:
+        """Return True if the image has a SHA256 hash appended."""
+        return self.data[self.HASH_APPENDED_OFFSET] == 1
+
+    @cached_property
+    def num_segments(self) -> int:
+        """Return the number of segments in this image."""
+        return self.data[self.NUM_SEGMENTS_OFFSET]
+
+    def copy(self, flash_size: int = 0) -> ImageFormat:
+        """Return a new bootloader header with the `flash_size` updated."""
+        if flash_size == 0:
+            return ImageFormat(self.data)
+        size_MB = flash_size // MB
+        if not (0 <= size_MB <= 128):
+            raise ValueError(f"Invalid flash size: {flash_size:#x}.")
+        # Flash size tag is written into top 4 bits of 4th byte of file
+        new_header = bytearray(self.data)
+        new_header[self.FLASH_SIZE_OFFSET] = (round(math.log2(size_MB)) << 4) | (
+            self.data[self.FLASH_SIZE_OFFSET] & 0xF
+        )
+        return ImageFormat(bytes(new_header))
+
+    @classmethod
+    def from_file(cls, f: BinaryIO) -> ImageFormat:
+        """Read the bootloader header from the firmware file or serial device."""
+        return cls(f.read(cls.HEADER_SIZE))
 
 
 @dataclass
@@ -130,14 +154,16 @@ def open_image_file(filename: str) -> Esp32Params:
     """Open a firmware file and return an `Esp32Image` object, which includes a
     File object for reading from the firmware file."""
     f = open(filename, "r+b")
-    chip_name, flash_size = _load_bootloader_header(f)
-    bootloader = BOOTLOADER_OFFSET[chip_name]
+    header = ImageFormat.from_file(f)
+    bootloader = BOOTLOADER_OFFSET[header.chip_name]
     if bootloader != 0:  # Is non-zero for esp32 and esp32s2 firmware files
         f = FirmwareFileWithOffset(f, bootloader)
     # Get app size from the size of the file. TODO: Should use app_part.offset
     app_size = f.seek(0, 2) - PartitionTable.APP_PART_OFFSET
     f.seek(bootloader)
-    return Esp32Params(filename, f, chip_name, flash_size, app_size, bootloader, False)
+    return Esp32Params(
+        filename, f, header.chip_name, header.flash_size, app_size, bootloader, False
+    )
 
 
 def open_image_device(filename: str) -> Esp32Params:
@@ -146,22 +172,24 @@ def open_image_device(filename: str) -> Esp32Params:
     f = Esp32DeviceFileWrapper(filename)
     detected_chip_name, detected_flash_size = f.autodetect()
     f.seek(BOOTLOADER_OFFSET[detected_chip_name])
-    chip_name, flash_size = _load_bootloader_header(f)
-    bootloader = BOOTLOADER_OFFSET[chip_name]
-    f.end = flash_size  # Use the flash size in the bootloader
+    header = ImageFormat.from_file(f)
+    bootloader = BOOTLOADER_OFFSET[header.chip_name]
+    f.end = header.flash_size  # Use the flash size in the bootloader
     app_size = 0  # Unknown app size
 
-    if detected_chip_name and detected_chip_name != chip_name:
+    if detected_chip_name and detected_chip_name != header.chip_name:
         warning(
             f"Detected device chip type ({detected_chip_name}) is different "
-            f"from firmware bootloader ({chip_name})."
+            f"from firmware bootloader ({header.chip_name})."
         )
-    if detected_flash_size and detected_flash_size != flash_size:
+    if detected_flash_size and detected_flash_size != header.flash_size:
         warning(
             f"Detected flash size ({detected_flash_size}) is different "
-            f"from firmware bootloader ({flash_size})."
+            f"from firmware bootloader ({header.flash_size})."
         )
-    return Esp32Params(filename, f, chip_name, flash_size, app_size, bootloader, True)
+    return Esp32Params(
+        filename, f, header.chip_name, header.flash_size, app_size, bootloader, True
+    )
 
 
 class Esp32Image(Esp32Params):
@@ -202,19 +230,19 @@ class Esp32Image(Esp32Params):
             return Part(b"", 0, -1, self.bootloader, BOOTLOADER_SIZE, b"bootloader", 0)
         return part if isinstance(part, Part) else self.table.by_name(part)
 
-    def _check_app_image(self, data: ByteString, name: str) -> bool:
-        """Check that the `data` is a valid app image for this device/firmware."""
-        chip_name, flash_size = _chip_flash_size(data)
-        if not chip_name:  # `data` is not an app image
+    def _check_app_image(self, data: bytes, name: str) -> bool:
+        """Check that `data` is a valid app image for this device/firmware."""
+        header = ImageFormat(data)
+        if not header.chip_name:  # `data` is not an app image
             return False
-        if chip_name != self.chip_name:
+        if header.chip_name != self.chip_name:
             raise ValueError(
-                f"'{name}': App image chip type ({chip_name}) "
+                f"'{name}': App image chip type ({header.chip_name}) "
                 f"does not match bootloader ({self.chip_name})."
             )
-        if name == "bootloader" and flash_size != self.flash_size:
+        if name == "bootloader" and header.flash_size != self.flash_size:
             warning(
-                f"'{name}': App {flash_size=} "
+                f"'{name}': App {header.flash_size=} "
                 f"does not match bootloader ({self.flash_size})."
             )
         return True
@@ -256,7 +284,7 @@ class Esp32Image(Esp32Params):
         with open(output, "wb") as fout:
             return fout.write(data)
 
-    def write_part(self, part: Part | str, data: ByteString) -> int:
+    def write_part(self, part: Part | str, data: bytes) -> int:
         """Write contents of `data` into the `part` partition in `image`."""
         part = self._get_part(part)
         if part.type_name == "app" and not self._check_app_image(data, part.name):
@@ -270,7 +298,7 @@ class Esp32Image(Esp32Params):
             )
         f = self.file
         f.seek(part.offset)
-        pad = B - (((len(data) - 1) % B) + 1)  # Pad to block size
+        pad = BLOCKSIZE - (((len(data) - 1) % BLOCKSIZE) + 1)  # Pad to block size
         n = f.write(bytes(data) + b"\xff" * pad)
         if n < len(data) + pad:
             raise ValueError(f"Failed to write {len(data)} bytes to '{part.name}'.")
@@ -294,7 +322,7 @@ class Esp32Image(Esp32Params):
         ):
             # Check there is an app at the start of the partition
             f.seek(part.offset)
-            if not self._check_app_image(f.read(1 * B), part.name):
+            if not self._check_app_image(f.read(BLOCKSIZE), part.name):
                 warning(f"Partition '{part.name}': App image signature not found.")
             else:
                 action(f"Partition '{part.name}' App image signature found.")
@@ -311,16 +339,37 @@ class Esp32Image(Esp32Params):
                 continue
             if newp.type_name == "data" and oldp != newp and newp.offset < self.size:
                 action(f"Erasing data partition: {newp.name}...")
-                self.erase_part(newp, min(newp.size, 4 * B))
+                self.erase_part(newp, min(newp.size, 4 * BLOCKSIZE))
 
-    def update_flash_size(self, flash_size: int) -> None:
+    def check_image_hash(self, image: ImageFormat) -> tuple[int, bytes]:
+        """Check the sha256 hash at the end of the bootloader image data."""
+        n = image.HEADER_SIZE
+        for i in range(image.num_segments):  # Skip over each segment in the image
+            segment_size = int.from_bytes(image.data[n + 4 : n + 8], "little")
+            debug(f"Bootloader Segment {i} size: {segment_size:#x}")
+            n += segment_size + 8
+        n += 1  # Allow for the checksum byte
+        n = (n + 0xF) & ~0xF  # Round up to a multiple of 16 bytes
+        return n, hashlib.sha256(image.data[:n]).digest()
+
+    def update_image_hash(self, image: ImageFormat) -> ImageFormat:
+        """Update the sha256 hash at the end of the bootloader image data."""
+        size, sha = self.check_image_hash(image)
+        action(f"Updating bootloader sha256 hash: {sha.hex()}")
+        return ImageFormat(image.data[:size] + sha + image.data[size + len(sha) :])
+
+    def update_bootloader(self, flash_size: int) -> None:
         """Update the bootloader header with the `flash_size`, if it has changed."""
         f = self.file
-        f.seek(self.bootloader)  # Bootloader is offset from start
-        header = bytearray(f.read(1 * B))  # Need to write whole blocks
-        _set_header_flash_size(header, flash_size)
         f.seek(self.bootloader)
-        f.write(header)
+        # Read the whole bootloader image
+        image = ImageFormat(f.read(BOOTLOADER_SIZE))
+        new_image = image.copy(flash_size=flash_size)
+        # Update the header with the new flash size
+        if new_image.hash_appended:
+            new_image = self.update_image_hash(new_image)
+        f.seek(self.bootloader)
+        f.write(new_image.data)
         self.flash_size = flash_size
 
     def write_table(self, table: PartitionTable) -> None:
@@ -337,7 +386,7 @@ class Esp32Image(Esp32Params):
         action("Writing partition table...")
         if table.flash_size != self.flash_size:
             action(f"Setting flash_size in bootloader to {table.flash_size//MB}MB...")
-            self.update_flash_size(table.flash_size)
+            self.update_bootloader(flash_size=table.flash_size)
         self.write_table(table)
         self.check_app_partitions(table)  # Check app parts for valid app signatures
         self.check_data_partitions(table)  # Erase data partitions which have changed
