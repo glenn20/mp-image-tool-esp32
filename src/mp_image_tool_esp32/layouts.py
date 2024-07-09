@@ -18,9 +18,9 @@ import csv
 
 from colorama import Fore
 
+from .argtypes import PartList
 from .common import KB, MB, Levels, verbosity
 from .partition_table import PartitionTable
-from .types import PartList
 
 # Recommended size for OTA app partitions (depends on flash_size).
 # These choices match OTA partition sizes in ports/esp32/partition-*-ota.csv.

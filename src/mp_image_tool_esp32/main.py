@@ -20,11 +20,12 @@ import sys
 
 from colorama import init as colorama_init
 
-from . import __version__, image_device, image_file, layouts, ota_update, parse_args
+from . import __version__, argparse_typed, argtypes, image_file, layouts, ota_update
+from .argtypes import ArgList, PartList
 from .common import KB, MB, Levels, action, error, info, set_verbosity, verbosity
+from .image_device import BLOCKSIZE, Esp32DeviceFileWrapper, set_baudrate
 from .image_file import Esp32Image
 from .partition_table import NAME_TO_TYPE, PartitionError, PartitionTable
-from .types import ArgList, PartList
 
 
 # `TypedNamespace` and the `usage` string together provide three things:
@@ -64,10 +65,10 @@ class TypedNamespace(argparse.Namespace):
     erase_fs: ArgList
     read: ArgList
     write: ArgList
-    _type_mapper = {  # Map types to funcs which return type from a string arg.
-        int: parse_args.numeric_arg,  # Convert arg to an integer.
-        PartList: parse_args.partlist,  # Convert arg to a list of Part tuples.
-        ArgList: parse_args.arglist,  # Convert arg to a list[list[str]].
+    _type_conversions = {  # Map types to funcs which return type from a string arg.
+        int: argtypes.numeric_arg,  # Convert arg to an integer.
+        PartList: argtypes.partlist,  # Convert arg to a list of Part tuples.
+        ArgList: argtypes.arglist,  # Convert arg to a list[list[str]].
     }
 
 
@@ -125,7 +126,7 @@ usage = """
 
 def process_arguments() -> None:
     namespace = TypedNamespace()
-    parser = parse_args.parser(usage, namespace)
+    parser = argparse_typed.parser(usage, namespace)
     args = parser.parse_args(namespace=namespace)
 
     set_verbosity(
@@ -145,7 +146,7 @@ def process_arguments() -> None:
     what: str = "esp32 device" if image_file.is_device(input) else "image file"
 
     if args.baud:
-        image_device.set_baudrate(args.baud)
+        set_baudrate(args.baud)
 
     # Open input (args.filename) from firmware file or esp32 device
     action(f"Opening {what}: {input}...")
@@ -177,11 +178,11 @@ def process_arguments() -> None:
     if args.table:  # --table default|ota|nvs=7B,factory=2M,vfs=0
         if args.table == [("ota", "", 0, 0)]:
             # ota_layout returns a string, so parse it into a PartList
-            args.table = parse_args.partlist(layouts.ota_layout(table, args.app_size))
+            args.table = argtypes.partlist(layouts.ota_layout(table, args.app_size))
             extension += "-OTA"
         elif args.table == [("default", "", 0, 0)]:
             # DEFAULT_TABLE_LAYOUT is a string, so parse it into a PartList
-            args.table = parse_args.partlist(layouts.DEFAULT_TABLE_LAYOUT)
+            args.table = argtypes.partlist(layouts.DEFAULT_TABLE_LAYOUT)
             extension += "-DEFAULT"
         else:
             extension += "-TABLE"
@@ -198,20 +199,20 @@ def process_arguments() -> None:
     if args.delete:  # --delete name1[,name2,..] : Delete partition from table
         for name, *_ in args.delete:
             table.remove(table.by_name(name))
-        extension += f"-delete={parse_args.unsplit(args.delete)}"
+        extension += f"-delete={argtypes.unsplit(args.delete)}"
 
     if args.resize:  # --resize NAME1=SIZE[,NAME2=...] : Resize partitions
         for name, *_, new_size in args.resize:
             action(f"Resizing {name} partition to {new_size:#x} bytes...")
             table.resize_part(name, new_size)
         table.check()
-        extension += f"-resize={parse_args.unsplit(args.resize)}"
+        extension += f"-resize={argtypes.unsplit(args.resize)}"
 
     if args.add:  # --add NAME1=SUBTYPE:OFFSET:SIZE[,..] : Add new partitions
         for name, subtype, offset, size in args.add:
             subtype = layouts.get_subtype(name, subtype)
             table.add_part(name, subtype, size, offset)
-        extension += f"-add={parse_args.unsplit(args.add)}"
+        extension += f"-add={argtypes.unsplit(args.add)}"
 
     ## Write modified partition table to a new file or back to flash storage
 
@@ -246,7 +247,7 @@ def process_arguments() -> None:
             if part.subtype_name not in ("fat",):
                 raise PartitionError(f"partition '{part.name}' is not a fs partition.")
             action(f"Erasing filesystem on partition '{part.name}'...")
-            image.erase_part(part, 4 * image_device.BLOCKSIZE)
+            image.erase_part(part, 4 * BLOCKSIZE)
 
     if args.read:  # --read NAME1=FILE1[,...]: Read contents of parts into FILES
         for name, filename in args.read:
@@ -275,7 +276,7 @@ def process_arguments() -> None:
         except PartitionError:
             pass  # No OTA partitions
 
-    if isinstance(image.file, image_device.Esp32DeviceFileWrapper):
+    if isinstance(image.file, Esp32DeviceFileWrapper):
         if args.no_reset:
             action("Staying in bootloader.")
         else:

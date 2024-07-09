@@ -15,24 +15,12 @@ Provides the `parser(usage, typed_namespace)` function which returns an
 3. an overly-elaborate method for avoiding the boilerplate of
    `argparse.add_argument()` which also makes the command usage easier for
    humans to parse from the code.
-
-Also includes some argument type conversion helper functions:
-- `numeric_arg(arg)`: Convert a string to an integer number of bytes.
-- `arglist(arg)`: Split a string into a list of lists of strings.
-- `partlist(arg)`: Split a string into a list of tuples describing a Partition.
-- `unsplit(arglist)`: Join a list of lists of strings or ints back into a single
-  string.
 """
 from __future__ import annotations
 
-import re
-import typing
 from argparse import ArgumentParser, Namespace
 from itertools import takewhile
-from typing import Any, Iterable
-
-from .common import KB, MB, B
-from .types import ArgList, PartList
+from typing import Any, Sequence, get_type_hints
 
 actions = {
     "S": "store",
@@ -45,75 +33,16 @@ actions = {
     "V": "version",
 }
 
-# Convert suffixes to multipliers for convenient units of size.
-SIZE_UNITS = {"M": MB, "K": KB, "B": B}
 
-# Delimiters for splitting up and stripping values of command arguments
-# First level split is on "," and then on "=" or ":" or "-"
-DELIMITERS = [r"\s*,\s*", r"\s*[=:-]\s*"]
-
-
-# Process a string containing a number with an optional unit suffix
-# eg. "8M" (8 megabytes), "0x10B" (16 disk blocks), "4K" (4 kilobytes)
-def numeric_arg(arg: str) -> int:
-    """Convert a string to an integer number of bytes.
-    The string may contain a decimal or hex number and an optional unit suffix:
-    "M"=megabytes, "K"=kilobyte or "B"=blocks (4096=0x1000).
-
-    Eg: `"8M"` (8 megabytes), `"0x1fB"` (31 disk blocks = 0x1f000), `"4k"` (4
-    kilobytes).
-    """
-    if not arg:
-        return 0
-    if (unit := SIZE_UNITS.get(arg[-1].upper(), 1)) != 1:
-        arg = arg[:-1]
-    return int(arg, 0) * unit  # Allow numbers in decimal or hex
-
-
-def arglist(arg: str) -> ArgList:
-    """Split command line arguments into a list of list of strings.
-    The string is delimited first by "," and then by "=", ":" or "-".
-    eg: `"nvs=nvs.bin,vfs=vfs.bin"` -> `[["nvs", "nvs.bin"], ["vfs", "vfs.bin"]]`
-    """
-    return [re.split(DELIMITERS[1], s) for s in re.split(DELIMITERS[0], arg.strip())]
-
-
-def partlist(arg: str) -> PartList:
-    """Split a command line argument into a list of tuples describing a
-    Partition: `[(name, subtype_name, offset, size),...]`.
-
-    The string is delimited first by "," and then by "=", ":" or "-". Offset,
-    subtype_name and size may be omitted (in that order).
-
-    Eg: `"factory=factory:7B:2M,vfs=1M"` -> `[("factory", "factory", 0x7000,
-    0x200000),("vfs", "", 0, 0x100000)]`.
-    """
-    return [
-        (
-            name,
-            rest[0] if len(rest) >= 2 else "",
-            numeric_arg(rest[1]) if len(rest) >= 3 else 0,
-            numeric_arg(rest[-1]) if len(rest) >= 1 else 0,
-        )
-        for (name, *rest) in arglist(arg)
-    ]
-
-
-def unsplit(arglist: Iterable[Iterable[str | int]]) -> str:
-    """Join a list of lists of strings or ints into a single string
-    delimited by "," and then "="."""
-    return ",".join("=".join(str(s) for s in x if s) for x in arglist)
-
-
-# A wrapper class for ArgumentParser that uses type hints from a namespace
+# A wrapper class for argparse.ArgumentParser that uses type hints from a namespace
 class TypedArgumentParser:
     def __init__(self, parser: ArgumentParser, typed_namespace: Namespace | None):
         self.parser = parser
         self.typed_namespace = typed_namespace
         # The type hints for the arguments are in the `typed_namespace`
-        self.argument_types = typing.get_type_hints(typed_namespace)
+        self.argument_types = get_type_hints(typed_namespace)
         # `typed_namespace` may also contain a type conversion function for some types
-        self.type_mapper = getattr(typed_namespace, "_type_mapper", {})
+        self.type_conversions = getattr(typed_namespace, "_type_conversions", {})
 
     def _get_argument_type(self, name: str) -> Any:
         # Get the field name by replacing "-" with "_" in the last word of options
@@ -121,18 +50,12 @@ class TypedArgumentParser:
         argtype = self.argument_types.get(name)  # Get the argument type hint
         if not argtype:
             raise ValueError(f"Argument `{name}` not found in {self.typed_namespace}")
-        # The type_mapper may contain a function to convert the argument type
-        return self.type_mapper.get(argtype, argtype)
+        # The type_conversions map may contain a function to convert the argument type
+        return self.type_conversions.get(argtype, argtype)
 
-    def add_argument(self, line: str) -> None:
-        argstr, help, action, *_ = (s.strip() for s in f"{line}|||".split("|", 3))
-
-        # options contains leading words starting with "-" if any, else all words.
-        # eg. "-i --input FILE" -> opts = ["-i", "--input"], metavars = ["FILE"]
-        # eg. "filename" -> opts = ["filename"], metavars = []
-        words = argstr.split()
-        options = list(takewhile(lambda s: s.startswith("-"), words)) or words
-        metavars = words[len(options) :]  # trailing words not in options.
+    def add_argument(
+        self, options: Sequence[str], metavars: Sequence[str], action: str, help: str
+    ) -> None:
         kwargs: dict[str, Any] = {}
         if len(metavars) > 1:
             kwargs.update({"metavar": metavars, "nargs": len(metavars)})
@@ -197,13 +120,21 @@ def parser(usage: str, typed_namespace: Namespace | None = None) -> ArgumentPars
     prog, description, arguments, epilog = (
         paragraph.strip() for paragraph in f"{usage}\n\n".split("\n\n", 3)
     )
-    parser = TypedArgumentParser(
+    typed_parser = TypedArgumentParser(
         ArgumentParser(prog=prog, description=description, epilog=epilog),
         typed_namespace,
     )
 
     # Process each of the arguments in the `arguments` string (one per line)
     for line in arguments.splitlines():
-        parser.add_argument(line)
+        argstr, help, action, *_ = (s.strip() for s in f"{line}|||".split("|", 3))
 
-    return parser.parser
+        # options contains leading words starting with "-" if any, else all words.
+        # eg. "-i --input FILE" -> opts = ["-i", "--input"], metavars = ["FILE"]
+        # eg. "filename" -> opts = ["filename"], metavars = []
+        words = argstr.split()
+        options = list(takewhile(lambda s: s.startswith("-"), words)) or words
+        metavars = words[len(options) :]  # trailing words not in options.
+        typed_parser.add_argument(options, metavars, action, help)
+
+    return typed_parser.parser

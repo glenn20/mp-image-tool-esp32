@@ -23,7 +23,6 @@ from typing import List
 from .common import action, debug, warning
 from .image_file import Esp32Image
 from .partition_table import Part
-from .types import ByteString
 
 OTA_SIZE = 0x20  # The size of an OTA record in bytes (32 bytes)
 OTA_OFFSETS = (0, 0x1000)  # The offsets of the OTA records in the otadata partition
@@ -54,7 +53,7 @@ def ota_is_valid(seq: int, state: int, crc: int) -> bool:
     return state == OtaState.VALID and ota_crc(seq) == crc
 
 
-def ota_sequence_number(data: ByteString) -> int:
+def ota_sequence_number(data: bytes) -> int:
     """Return the ota sequence number from a binary OTA record in `data` or 0 if
     the record is invalid."""
     seq, _, state, crc = struct.unpack(OTA_FMT, data)
