@@ -29,7 +29,7 @@ BLOCKSIZE = B  # Default block size for erasing/writing regions of the flash sto
 
 baudrate = 460800  # Default baudrate for esptool.py
 
-esptool_args: str = ""  # Default arguments for the esptool.py commands
+esptool_args: str = "--after no_reset"  # Default arguments for the esptool.py commands
 
 tqdm_args: dict[str, Any] = {
     "ascii": " =",
@@ -154,6 +154,12 @@ class Esp32DeviceFileWrapper(BinaryIO):
 
     def seekable(self) -> bool:
         return True
+
+    def reset_device(self) -> None:
+        global esptool_args
+        if esptool_args.find("--after no_reset") != -1:
+            esptool_args = esptool_args.replace("--after no_reset", "")
+            esptool(self.port, "flash_id")
 
     # Some additional convenience methods
     def erase(self, size: int) -> None:

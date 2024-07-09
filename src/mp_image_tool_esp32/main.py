@@ -21,7 +21,7 @@ import sys
 from colorama import init as colorama_init
 
 from . import __version__, image_device, image_file, layouts, ota_update, parse_args
-from .common import KB, MB, B, Levels, action, error, info, set_verbosity, verbosity
+from .common import KB, MB, Levels, action, error, info, set_verbosity, verbosity
 from .image_file import Esp32Image
 from .partition_table import NAME_TO_TYPE, PartitionError, PartitionTable
 from .types import ArgList, PartList
@@ -47,6 +47,7 @@ class TypedNamespace(argparse.Namespace):
     output: str
     quiet: bool
     debug: bool
+    no_reset: bool
     check: bool
     extract_app: bool
     flash_size: int
@@ -82,6 +83,7 @@ usage = """
     -o --output FILE    | output filename
     -q --quiet          | mute program output
     -d --debug          | print additional info
+    -n --no-reset       | do not reset the device after esptool.py commands
     -x --extract-app    | extract .app-bin from firmware
     -f --flash-size SIZE| size of flash for new partition table
     -a --app-size SIZE  | size of factory and ota app partitions
@@ -244,7 +246,7 @@ def process_arguments() -> None:
             if part.subtype_name not in ("fat",):
                 raise PartitionError(f"partition '{part.name}' is not a fs partition.")
             action(f"Erasing filesystem on partition '{part.name}'...")
-            image.erase_part(part, 4 * B)
+            image.erase_part(part, 4 * image_device.BLOCKSIZE)
 
     if args.read:  # --read NAME1=FILE1[,...]: Read contents of parts into FILES
         for name, filename in args.read:
@@ -260,7 +262,7 @@ def process_arguments() -> None:
 
     if args.ota_update:  # --ota-update FILE : Perform an OTA firmware upgrade
         if not image.is_device:
-            raise ValueError("--ota requires an esp32 device")
+            raise ValueError("--ota-update requires an esp32 device")
         action(f"Performing OTA firmware upgrade from '{args.ota_update}'...")
         ota_update.ota_update(image, args.ota_update, args.no_rollback)
 
@@ -272,6 +274,13 @@ def process_arguments() -> None:
             info(f"Next OTA boot partition: {ota.get_next_update().name}")
         except PartitionError:
             pass  # No OTA partitions
+
+    if isinstance(image.file, image_device.Esp32DeviceFileWrapper):
+        if args.no_reset:
+            action("Staying in bootloader.")
+        else:
+            action("Hard resetting via RTS pin...")
+            image.file.reset_device()
 
     image.file.close()
 
