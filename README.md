@@ -386,6 +386,7 @@ options:
                         output filename
   -q, --quiet           mute program output
   -d, --debug           print additional info
+  -n, --no-reset        do not reset the device after esptool.py commands
   -x, --extract-app     extract .app-bin from firmware
   -f SIZE, --flash-size SIZE
                         size of flash for new partition table
