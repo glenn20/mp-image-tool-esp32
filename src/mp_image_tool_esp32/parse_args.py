@@ -141,9 +141,9 @@ class TypedArgumentParser:
 
         # Get the type hint for the argument from the typed_namespace
         argtype = self._get_argument_type(options[-1])
-        if argtype and argtype not in (bool, str):
+        if argtype and argtype is not bool and argtype is not str:
             kwargs["type"] = argtype
-        elif argtype == bool and not action:
+        elif argtype is bool and not action:
             # default for bool, unless action or fun have been set
             action = "store_true"
 
@@ -169,6 +169,7 @@ class TypedArgumentParser:
 # -c --option3 NAME1,NAME2 | help string
 # ...
 # """
+
 
 # Where `action` is an argparse action or an abbreviationfrom actions dict above
 # (optional). `typed_namespace` is a class containing the type hints for the
