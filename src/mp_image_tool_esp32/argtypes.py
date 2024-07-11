@@ -1,6 +1,7 @@
 # MIT License: Copyright (c) 2023 @glenn20
 """
-Provides helper functions to process and convert some command line arguments.
+Provides helper functions and types to process and convert some command line
+arguments.
 
 Includes some argument type conversion helper functions:
 - `numeric_arg(arg)`: Convert a string to an integer number of bytes.
@@ -15,7 +16,9 @@ import re
 import sys
 from typing import Iterable
 
-from .common import KB, MB, B
+MB = 0x100_000  # 1 Megabyte
+KB = 0x400  # 1 Kilobyte
+B = 0x1_000  # 1 Block (4096 bytes)
 
 # Convert suffixes to multipliers for convenient units of size.
 SIZE_UNITS = {"M": MB, "K": KB, "B": B}

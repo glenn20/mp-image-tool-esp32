@@ -21,8 +21,8 @@ import sys
 from colorama import init as colorama_init
 
 from . import __version__, argparse_typed, argtypes, image_file, layouts, ota_update
-from .argtypes import ArgList, PartList
-from .common import KB, MB, Levels, action, error, info, set_verbosity, verbosity
+from . import logger as log
+from .argtypes import KB, MB, ArgList, PartList
 from .image_device import BLOCKSIZE, Esp32DeviceFileWrapper, set_baudrate
 from .image_file import Esp32Image
 from .partition_table import NAME_TO_TYPE, PartitionError, PartitionTable
@@ -129,11 +129,9 @@ def process_arguments() -> None:
     parser = argparse_typed.parser(usage, namespace)
     args = parser.parse_args(namespace=namespace)
 
-    set_verbosity(
-        Levels.DEBUG if args.debug else Levels.WARN if args.quiet else Levels.INFO
-    )
+    log.setLevel("DEBUG" if args.debug else "WARNING" if args.quiet else "INFO")
 
-    info(
+    log.info(
         f"Running {os.path.basename(sys.argv[0])} {__version__} "
         f"(Python version {platform.python_version()})."
     )
@@ -146,24 +144,24 @@ def process_arguments() -> None:
     what: str = "esp32 device" if image_file.is_device(input) else "image file"
 
     if args.baud:
-        set_baudrate(args.baud)
+        log.info(f"Using baudrate {set_baudrate(args.baud)}")
 
     # Open input (args.filename) from firmware file or esp32 device
-    action(f"Opening {what}: {input}...")
+    log.action(f"Opening {what}: {input}...")
     image: Esp32Image = Esp32Image(input)
-    info(f"Firmware Chip type: {image.chip_name}")
-    info(f"Firmware Flash size: {image.flash_size // MB}MB")
+    log.info(f"Firmware Chip type: {image.chip_name}")
+    log.info(f"Firmware Flash size: {image.flash_size // MB}MB")
     table: PartitionTable = copy.copy(image.table)
     if image.app_size:
         x = image.app_size
-        info(f"Micropython App size: {x:#x} bytes ({x // KB:,d} KB)")
-    if verbosity(Levels.INFO):
+        log.info(f"Micropython App size: {x:#x} bytes ({x // KB:,d} KB)")
+    if log.isloglevel("info"):
         layouts.print_table(table)
     extension = ""  # Each op that changes table adds identifier to extension
 
     if args.extract_app:  # -x --extract-app : Extract app image from firmware
         output = args.output or re.sub(r"(.bin)?$", ".app-bin", basename, 1)
-        action(f"Writing micropython app image file: {output}...")
+        log.action(f"Writing micropython app image file: {output}...")
         image.save_app_image(output)
 
     if args.flash_size:  # -f --flash-size SIZE : Set size of the flash storage
@@ -203,7 +201,7 @@ def process_arguments() -> None:
 
     if args.resize:  # --resize NAME1=SIZE[,NAME2=...] : Resize partitions
         for name, *_, new_size in args.resize:
-            action(f"Resizing {name} partition to {new_size:#x} bytes...")
+            log.action(f"Resizing {name} partition to {new_size:#x} bytes...")
             table.resize_part(name, new_size)
         table.check()
         extension += f"-resize={argtypes.unsplit(args.resize)}"
@@ -219,7 +217,8 @@ def process_arguments() -> None:
     if extension:  # A change has been made to the partition table
         if table.app_part.offset != image.table.app_part.offset:
             raise PartitionError("first app partition offset has changed", table)
-        layouts.print_table(table)
+        if log.isloglevel("info"):
+            layouts.print_table(table)
         if not image.is_device:  # If input is a firmware file, make a copy
             # Make a copy of the firmware file and open the new firmware...
             out = args.output or re.sub(r"([.][^.]+)?$", f"{extension}\\1", basename, 1)
@@ -227,14 +226,14 @@ def process_arguments() -> None:
             image.file.close()
             image = Esp32Image(out)
         # Update the firmware with the new partition table...
-        action(f"Writing to {what}: {image.filename}...")
+        log.action(f"Writing to {what}: {image.filename}...")
         image.update_table(table)
 
     ## For erasing/reading/writing flash storage partitions
 
     if args.erase:  # --erase NAME1[,NAME2,...] : Erase partition
         for name, *_ in args.erase:
-            action(f"Erasing partition '{name}'...")
+            log.action(f"Erasing partition '{name}'...")
             part = image.table.by_name(name)
             image.erase_part(part)
 
@@ -246,41 +245,41 @@ def process_arguments() -> None:
             part = image.table.by_name(name)
             if part.subtype_name not in ("fat",):
                 raise PartitionError(f"partition '{part.name}' is not a fs partition.")
-            action(f"Erasing filesystem on partition '{part.name}'...")
+            log.action(f"Erasing filesystem on partition '{part.name}'...")
             image.erase_part(part, 4 * BLOCKSIZE)
 
     if args.read:  # --read NAME1=FILE1[,...]: Read contents of parts into FILES
         for name, filename in args.read:
-            action(f"Saving partition '{name}' into '{filename}'...")
+            log.action(f"Saving partition '{name}' into '{filename}'...")
             n = image.read_part_to_file(name, filename)
-            info(f"Wrote {n:#x} bytes to '{filename}'.")
+            log.info(f"Wrote {n:#x} bytes to '{filename}'.")
 
     if args.write:  # --write NAME1=FILE1[,...] : Write FILES into partitions
         for name, filename in args.write:
-            action(f"Writing partition '{name}' from '{filename}'...")
+            log.action(f"Writing partition '{name}' from '{filename}'...")
             n = image.write_part_from_file(name, filename)
-            info(f"Wrote {n:#x} bytes to partition '{name}'.")
+            log.info(f"Wrote {n:#x} bytes to partition '{name}'.")
 
     if args.ota_update:  # --ota-update FILE : Perform an OTA firmware upgrade
         if not image.is_device:
             raise ValueError("--ota-update requires an esp32 device")
-        action(f"Performing OTA firmware upgrade from '{args.ota_update}'...")
+        log.action(f"Performing OTA firmware upgrade from '{args.ota_update}'...")
         ota_update.ota_update(image, args.ota_update, args.no_rollback)
 
     if args.check:  # --check : Check the partition table and app images are valid
         image.check_app_partitions(image.table)
         try:
             ota = ota_update.OTAUpdater(image)
-            info(f"Current OTA boot partition: {ota.current().name}")
-            info(f"Next OTA boot partition: {ota.get_next_update().name}")
+            log.info(f"Current OTA boot partition: {ota.current().name}")
+            log.info(f"Next OTA boot partition: {ota.get_next_update().name}")
         except PartitionError:
             pass  # No OTA partitions
 
     if isinstance(image.file, Esp32DeviceFileWrapper):
         if args.no_reset:
-            action("Staying in bootloader.")
+            log.action("Staying in bootloader.")
         else:
-            action("Hard resetting via RTS pin...")
+            log.action("Hard resetting via RTS pin...")
             image.file.reset_device()
 
     image.file.close()
@@ -291,10 +290,10 @@ def main() -> int:
     try:
         process_arguments()
     except (PartitionError, ValueError, FileNotFoundError) as err:
-        error(f"{type(err).__name__}: {err}")
+        log.error(f"{type(err).__name__}: {err}")
         if isinstance(err, PartitionError) and err.table:
             err.table.print()
-        if verbosity(Levels.DEBUG):
+        if log.isloglevel("debug"):
             raise err
         return 1
     return 0

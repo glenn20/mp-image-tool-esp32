@@ -20,7 +20,7 @@ from enum import IntEnum
 from functools import cached_property
 from typing import List
 
-from .common import action, debug, warning
+from . import logger as log
 from .image_file import Esp32Image
 from .partition_table import Part
 
@@ -58,7 +58,7 @@ def ota_sequence_number(data: bytes) -> int:
     the record is invalid."""
     seq, _, state, crc = struct.unpack(OTA_FMT, data)
     is_valid = ota_is_valid(seq, state, crc)
-    debug(f"OTA record: seq={seq}, state={state}, crc={crc}, valid={is_valid}")
+    log.debug(f"OTA record: seq={seq}, state={state}, crc={crc}, valid={is_valid}")
     return seq if is_valid else 0
 
 
@@ -125,7 +125,7 @@ class OTAUpdater:
             if seq - start > len(self._ota_app_parts):
                 raise ValueError(f"'{part.name}' not found in 'ota' partitions")
         if seq == start:
-            warning(f"'{part.name}' is already set for booting.")
+            log.warning(f"'{part.name}' is already set for booting.")
             return
         data = (
             ota_record(seq, OtaState.UNDEFINED if self.no_rollback else OtaState.NEW)
@@ -155,8 +155,8 @@ def ota_update(image: Esp32Image, firmware: str, no_rollback: bool = False) -> N
     ota = OTAUpdater(image, no_rollback)
 
     new_part = ota.get_next_update()  # Get the next available OTA update partition
-    action(f"Writing firmware to OTA partition {new_part.name}...")
+    log.action(f"Writing firmware to OTA partition {new_part.name}...")
     image.write_part_from_file(new_part, firmware)
 
-    action("Updating otadata partition...")
+    log.action("Updating otadata partition...")
     ota.set_boot(new_part)

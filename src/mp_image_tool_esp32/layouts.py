@@ -18,8 +18,7 @@ import csv
 
 from colorama import Fore
 
-from .argtypes import PartList
-from .common import KB, MB, Levels, verbosity
+from .argtypes import KB, MB, PartList
 from .partition_table import PartitionTable
 
 # Recommended size for OTA app partitions (depends on flash_size).
@@ -106,8 +105,6 @@ def from_csv(table: PartitionTable, filename: str) -> PartitionTable:
 
 def print_table(table: PartitionTable) -> None:
     """Print a detailed description of the partition table."""
-    if not verbosity(Levels.INFO):
-        return
     colors = dict(c=Fore.CYAN, r=Fore.RED)
 
     print(Fore.CYAN, end="")

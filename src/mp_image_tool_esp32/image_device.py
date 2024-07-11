@@ -21,7 +21,8 @@ from typing import IO, Any, BinaryIO
 import tqdm
 from colorama import Fore
 
-from .common import KB, MB, B, Levels, debug, error, info, verbosity
+from . import logger as log
+from .argtypes import KB, MB, B
 
 BAUDRATES = (115200, 230400, 460800, 921600, 1500000, 2000000, 3000000)
 
@@ -56,7 +57,6 @@ def set_baudrate(baud: int) -> int:
     """Set the baudrate for `esptool.py` to the highest value <= `baud`."""
     global baudrate
     baudrate = max(filter(lambda x: x <= baud, BAUDRATES))
-    info(f"Using baudrate {baudrate}")
     return baudrate
 
 
@@ -85,24 +85,24 @@ def esptool(port: str, command: str, size: int = 0) -> str:
     A tqdm progress bar is shown for read/write greater than 16KB.
     Errors in the `esptool.py` command are raised as a `CalledProcessError`."""
     cmd = f"esptool.py {esptool_args} --baud {baudrate} --port {port} {command}"
-    debug("$", cmd)  # Use Popen() so we can monitor progress messages in the output
+    log.debug(f"$ {cmd}")  # Use Popen() to monitor progress messages in the output
     p = Popen(cmd, shell=True, stdout=PIPE, stderr=PIPE, text=True, bufsize=0)
     output, stderr = "", ""
-    if verbosity(Levels.INFO) and size > 32 * KB and p.stdout:
+    if log.isloglevel("info") and size > 32 * KB and p.stdout:
         output = esptool_progress_bar(p.stdout, size)  # Show a progress bar
-        debug(output)
+        log.debug(output)
     elif p.stdout:
         while s := p.stdout.readline():
             output += s
-            debug(s, end="")  # Show output as it happens if debug==True
+            log.debug(s.strip())  # Show output as it happens if debug==True
     output = output.strip()
     if p.stderr and (stderr := p.stderr.read().strip()):
-        error(stderr)
+        log.error(stderr)
     err = p.poll()
     if err and not (err == 1 and output.endswith("set --after option to 'no_reset'.")):
         # Ignore the "set --after" warning message and ercode for esp32s2.
         # If we add "--after no_reset", reconnects to the device fail repeatedly
-        error(f"Error: {cmd} returns error {err}.")
+        log.error(f"Error: {cmd} returns error {err}.")
         if stderr:
             print(stderr)
         if output:
@@ -135,6 +135,16 @@ class Esp32DeviceFileWrapper(BinaryIO):
             return data
 
     def write(self, data: bytes) -> int:  # type: ignore
+        if len(data) % BLOCKSIZE:
+            raise ValueError(
+                f"Write of {len(data):#x} is not aligned to "
+                f"blocksize ({BLOCKSIZE:#x} bytes)."
+            )
+        if self.pos % BLOCKSIZE:
+            raise ValueError(
+                f"Write at position {self.pos:#x} is not multiple of "
+                f"blocksize ({BLOCKSIZE:#x} bytes)."
+            )
         with NamedTemporaryFile("w+b", prefix="mp-image-tool-esp32-") as f:
             f.write(data)
             f.flush()

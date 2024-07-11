@@ -24,7 +24,8 @@ from functools import cached_property
 from pathlib import Path
 from typing import BinaryIO
 
-from .common import MB, action, debug, warning
+from . import logger as log
+from .argtypes import MB
 from .image_device import BLOCKSIZE, Esp32DeviceFileWrapper
 from .partition_table import BOOTLOADER_SIZE, Part, PartitionTable
 
@@ -178,12 +179,12 @@ def open_image_device(filename: str) -> Esp32Params:
     app_size = 0  # Unknown app size
 
     if detected_chip_name and detected_chip_name != header.chip_name:
-        warning(
+        log.warning(
             f"Detected device chip type ({detected_chip_name}) is different "
             f"from firmware bootloader ({header.chip_name})."
         )
     if detected_flash_size and detected_flash_size != header.flash_size:
-        warning(
+        log.warning(
             f"Detected flash size ({detected_flash_size}) is different "
             f"from firmware bootloader ({header.flash_size})."
         )
@@ -241,7 +242,7 @@ class Esp32Image(Esp32Params):
                 f"does not match bootloader ({self.chip_name})."
             )
         if name == "bootloader" and header.flash_size != self.flash_size:
-            warning(
+            log.warning(
                 f"'{name}': App {header.flash_size=} "
                 f"does not match bootloader ({self.flash_size})."
             )
@@ -303,7 +304,7 @@ class Esp32Image(Esp32Params):
         if n < len(data) + pad:
             raise ValueError(f"Failed to write {len(data)} bytes to '{part.name}'.")
         if n < part.size:
-            action("Erasing remainder of partition...")
+            log.action("Erasing remainder of partition...")
             if isinstance(f, Esp32DeviceFileWrapper):
                 f.erase(part.size - n)  # Bypass write() to erase the flash
             else:
@@ -323,9 +324,9 @@ class Esp32Image(Esp32Params):
             # Check there is an app at the start of the partition
             f.seek(part.offset)
             if not self._check_app_image(f.read(BLOCKSIZE), part.name):
-                warning(f"Partition '{part.name}': App image signature not found.")
+                log.warning(f"Partition '{part.name}': App image signature not found.")
             else:
-                action(f"Partition '{part.name}' App image signature found.")
+                log.action(f"Partition '{part.name}' App image signature found.")
 
     def check_data_partitions(self, new_table: PartitionTable) -> None:
         """Erase any data partitions in `new_table` which have been moved or resized."""
@@ -338,7 +339,7 @@ class Esp32Image(Esp32Params):
             if not oldp:
                 continue
             if newp.type_name == "data" and oldp != newp and newp.offset < self.size:
-                action(f"Erasing data partition: {newp.name}...")
+                log.action(f"Erasing data partition: {newp.name}...")
                 self.erase_part(newp, min(newp.size, 4 * BLOCKSIZE))
 
     def check_image_hash(self, image: ImageFormat) -> tuple[int, bytes]:
@@ -346,7 +347,7 @@ class Esp32Image(Esp32Params):
         n = image.HEADER_SIZE
         for i in range(image.num_segments):  # Skip over each segment in the image
             segment_size = int.from_bytes(image.data[n + 4 : n + 8], "little")
-            debug(f"Bootloader Segment {i} size: {segment_size:#x}")
+            log.debug(f"Bootloader Segment {i} size: {segment_size:#x}")
             n += segment_size + 8
         n += 1  # Allow for the checksum byte
         n = (n + 0xF) & ~0xF  # Round up to a multiple of 16 bytes
@@ -355,7 +356,7 @@ class Esp32Image(Esp32Params):
     def update_image_hash(self, image: ImageFormat) -> ImageFormat:
         """Update the sha256 hash at the end of the bootloader image data."""
         size, sha = self.check_image_hash(image)
-        action(f"Updating bootloader sha256 hash: {sha.hex()}")
+        log.action(f"Updating bootloader sha256 hash: {sha.hex()}")
         return ImageFormat(image.data[:size] + sha + image.data[size + len(sha) :])
 
     def update_bootloader(self, flash_size: int) -> None:
@@ -383,9 +384,11 @@ class Esp32Image(Esp32Params):
         - write the new `table` to `image`
         - update the `flash_size` in the bootloader header (if it has changed) and
         - erase any data partitions which have changed from `initial_table`."""
-        action("Writing partition table...")
+        log.action("Writing partition table...")
         if table.flash_size != self.flash_size:
-            action(f"Setting flash_size in bootloader to {table.flash_size//MB}MB...")
+            log.action(
+                f"Setting flash_size in bootloader to {table.flash_size//MB}MB..."
+            )
             self.update_bootloader(flash_size=table.flash_size)
         self.write_table(table)
         self.check_app_partitions(table)  # Check app parts for valid app signatures

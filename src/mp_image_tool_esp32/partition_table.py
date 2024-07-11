@@ -16,7 +16,8 @@ import struct
 from functools import cached_property
 from typing import Generator, List, NamedTuple
 
-from .common import KB, MB
+from . import logger as log
+from .argtypes import KB, MB
 
 # The default layout in flash storage on device
 FLASH_SIZE = 0x400_000  # Defaults size of flash storage (4 Megabytes)
@@ -279,7 +280,7 @@ class PartitionTable(List[Part]):
                     f"'{p.name}' overlaps with previous partition.", self
                 )
             if p.offset > offset:
-                print(
+                log.warning(
                     f"Warning: Free space before '{p.name}' "
                     f"({p.offset - offset:#x} bytes).",
                 )
@@ -305,12 +306,12 @@ class PartitionTable(List[Part]):
                 self,
             )
         if offset != self.flash_size:
-            print(
+            log.warning(
                 f"Warning: End of last partition ({offset:#x})"
                 f" < flash size ({self.flash_size:#x})."
             )
         if self.app_part.offset != self.APP_PART_OFFSET:
-            print(
+            log.warning(
                 f"Warning: First app at offset={self.app_part.offset:#x}"
                 f" (expected {self.APP_PART_OFFSET:#x})."
             )
