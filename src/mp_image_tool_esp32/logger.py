@@ -1,62 +1,74 @@
 # MIT License: Copyright (c) 2023 @glenn20
+"""A wrapper module to provide a consistent interface for logging to console.
+"""
 
 import logging
+from logging import CRITICAL, DEBUG, ERROR, INFO, NOTSET, WARNING
 from typing import Any
 
-import colorlog
+import colorama
 
-ACTION = logging.INFO + 1
-logging.addLevelName(ACTION, "ACTION")
-
-handler = logging.StreamHandler()
-handler.setFormatter(
-    colorlog.ColoredFormatter(
-        "%(log_color)s%(message)s",
-        log_colors={
-            "DEBUG": "yellow",
-            "INFO": "reset",
-            "ACTION": "green",
-            "WARNING": "yellow",
-            "ERROR": "red",
-            "CRITICAL": "red,bg_white",
-        },
-    ),
+FORMAT = "%(message)s"
+ACTION = INFO + 1
+RESET = "\033[0m"
+BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, GREY = (
+    f"\033[3{i};20m" for i in range(8)
 )
-log = logging.getLogger()
-log.addHandler(handler)
-log.setLevel(logging.INFO)
+log_color = {
+    DEBUG: MAGENTA,
+    INFO: RESET,
+    ACTION: GREEN,
+    WARNING: YELLOW,
+    ERROR: RED,
+    CRITICAL: RED,
+}
 levels = {
-    "DEBUG": logging.DEBUG,
-    "INFO": logging.INFO,
+    "DEBUG": DEBUG,
+    "INFO": INFO,
     "ACTION": ACTION,
-    "WARNING": logging.WARNING,
-    "ERROR": logging.ERROR,
+    "WARNING": WARNING,
+    "ERROR": ERROR,
 }
 
 
+colorama.init()
+logging.addLevelName(ACTION, "ACTION")
+logging.basicConfig(format=FORMAT)
+logger = logging.getLogger()  # Use the root logger
+logger.setLevel(logging.INFO)
+
+
+def colour(msg: str, level: int) -> str:
+    return f"{log_color[level]}{msg}{RESET}"
+
+
 def setLevel(level: str) -> None:
-    log.setLevel(levels.get(level.upper(), logging.NOTSET))
+    logger.setLevel(levels.get(level.upper(), NOTSET))
 
 
 def isloglevel(level: str) -> bool:
-    return levels.get(level.upper(), logging.ERROR) >= log.getEffectiveLevel()
+    return levels.get(level.upper(), ERROR) >= logger.getEffectiveLevel()
+
+
+def _dolog(level: int, msg: str, *args: Any, **kwargs: Any) -> None:
+    logger.log(level, colour(msg, level), *args, **kwargs)
 
 
 def debug(msg: str, *args: Any, **kwargs: Any) -> None:
-    log.debug(msg, *args, **kwargs)
+    _dolog(DEBUG, msg, *args, **kwargs)
 
 
 def info(msg: str, *args: Any, **kwargs: Any) -> None:
-    log.info(msg, *args, **kwargs)
+    _dolog(INFO, msg, *args, **kwargs)
 
 
 def action(msg: str, *args: Any, **kwargs: Any) -> None:
-    log.log(ACTION, msg, *args, **kwargs)
+    _dolog(ACTION, msg, *args, **kwargs)
 
 
 def warning(msg: str, *args: Any, **kwargs: Any) -> None:
-    log.warning(msg, *args, **kwargs)
+    _dolog(WARNING, msg, *args, **kwargs)
 
 
 def error(msg: str, *args: Any, **kwargs: Any) -> None:
-    log.error(msg, *args, **kwargs)
+    _dolog(ERROR, msg, *args, **kwargs)

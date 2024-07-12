@@ -16,8 +16,7 @@ Provides:
 
 import csv
 
-from colorama import Fore
-
+from . import logger as log
 from .argtypes import KB, MB, PartList
 from .partition_table import PartitionTable
 
@@ -105,16 +104,16 @@ def from_csv(table: PartitionTable, filename: str) -> PartitionTable:
 
 def print_table(table: PartitionTable) -> None:
     """Print a detailed description of the partition table."""
-    colors = dict(c=Fore.CYAN, r=Fore.RED)
+    colors = dict(c=log.CYAN, r=log.RED)
 
-    print(Fore.CYAN, end="")
+    print(log.CYAN, end="")
     print(
         "{c}Partition table (flash size: {r}{size}MB{c}):".format(
             size=table.flash_size // MB, **colors
         )
     )
     table.print()
-    print(Fore.RESET, end="")
+    print(log.RESET, end="")
     if table.app_part and table.app_size:
         print(
             "Micropython app fills {used:0.1f}% of {app} partition "

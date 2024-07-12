@@ -18,8 +18,6 @@ import re
 import shutil
 import sys
 
-from colorama import init as colorama_init
-
 from . import __version__, argparse_typed, argtypes, image_file, layouts, ota_update
 from . import logger as log
 from .argtypes import KB, MB, ArgList, PartList
@@ -286,7 +284,6 @@ def process_arguments() -> None:
 
 
 def main() -> int:
-    colorama_init()
     try:
         process_arguments()
     except (PartitionError, ValueError, FileNotFoundError) as err:
