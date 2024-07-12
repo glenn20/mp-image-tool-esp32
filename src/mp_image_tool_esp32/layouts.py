@@ -112,7 +112,7 @@ def print_table(table: PartitionTable) -> None:
             size=table.flash_size // MB, **colors
         )
     )
-    table.print()
+    print(table.print())
     print(log.RESET, end="")
     if table.app_part and table.app_size:
         print(

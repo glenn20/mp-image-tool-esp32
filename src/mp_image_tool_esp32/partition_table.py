@@ -12,9 +12,10 @@ write from binary partiton tables in firmware files and devices.
 from __future__ import annotations
 
 import hashlib
+import re
 import struct
 from functools import cached_property
-from typing import Generator, List, NamedTuple
+from typing import Any, Generator, Iterable, List, NamedTuple
 
 from . import logger as log
 from .argtypes import KB, MB
@@ -68,6 +69,31 @@ class PartTuple(NamedTuple):
     size: int
     label: bytes
     flags: int
+
+
+# Return a number of bytes in a human readable format
+def _human(size: int) -> str:
+    return (
+        f"({size:0.1f} B)" if size < 0.5 * KB else
+        f"({size / KB:0.1f} kB)" if size < 0.5 * MB else
+        f"({size / MB:0.1f} MB)"
+    )  # fmt: skip
+
+
+# Return a formatted data table as a string
+def _make_table(
+    format: str, header: Iterable[str], data: Iterable[Iterable[Any]]
+) -> str:
+    # Make a format string for the header fields, which are all strings.
+    hdr_format = re.sub(r":([^#}]*)#?([0-9]*).?([0-9]*)\w}", r":\1\2s}", format)
+    if hdr_format.startswith(" "):
+        hdr_format = f"#{hdr_format[1:]}"
+    return "\n".join(
+        (
+            hdr_format.format(*header),
+            *(format.format(*line) for line in data),
+        )
+    )
 
 
 class Part(PartTuple):
@@ -132,23 +158,23 @@ class PartitionTable(List[Part]):
             raise PartitionError(f"Partition {subtype_name} not found.", self)
         return p
 
-    def print(self) -> None:
-        print(
-            "# Name             Type     SubType      Offset"
-            "       Size      (End)  Flags"
+    def print(self) -> str:
+        format = "  {:16s} {:8s} {:8s} {:>#10x} {:>#10x} {:>#10x} {:>#5x} {:>10s}"
+        header = ("Name", "Type", "SubType", "Offset", "Size", "End", "Flags", "")
+        data = (
+            (
+                p.name,
+                p.type_name,
+                p.subtype_name,
+                p.offset,
+                p.size,
+                p.offset + p.size,
+                p.flags,
+                _human(p.size),
+            )
+            for p in self
         )
-        for p in self:
-            total = p.offset + p.size
-            size_str = (
-                f"({p.size / KB:0.1f} kB)"
-                if p.size < 0.5 * MB
-                else f"({p.size / MB:0.1f} MB)"
-            )
-            print(
-                f"  {p.name:16s} {p.type_name:8s} {p.subtype_name:8}"
-                f" {p.offset:#10x} {p.size:#10x} {total:>#10x} {p.flags:#4x}"
-                f" {size_str:>10s}"
-            )
+        return _make_table(format, header, data)
 
     @staticmethod
     def _parts_from_bytes(data: bytes) -> Generator[Part, None, None]:
