@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import os
 import re
+import shlex
+import sys
 from subprocess import PIPE, CalledProcessError, Popen
 from tempfile import NamedTemporaryFile
 from typing import IO, Any, BinaryIO
@@ -84,30 +86,33 @@ def esptool(port: str, command: str, size: int = 0) -> str:
     """Run the `esptool.py` command and return the output as a string.
     A tqdm progress bar is shown for read/write greater than 16KB.
     Errors in the `esptool.py` command are raised as a `CalledProcessError`."""
-    cmd = f"esptool.py {esptool_args} --baud {baudrate} --port {port} {command}"
+    cmd = f"{sys.executable} -m esptool {esptool_args} --baud {baudrate} --port {port} {command}"
+    args = shlex.split(cmd)
     log.debug(f"$ {cmd}")  # Use Popen() to monitor progress messages in the output
-    p = Popen(cmd, shell=True, stdout=PIPE, stderr=PIPE, text=True, bufsize=0)
+    p = Popen(args, stdout=PIPE, stderr=PIPE, text=True, bufsize=0)
     output, stderr = "", ""
     if log.isloglevel("info") and size > 32 * KB and p.stdout:
         output = esptool_progress_bar(p.stdout, size)  # Show a progress bar
         log.debug(output)
     elif p.stdout:
-        while s := p.stdout.readline():
-            output += s
-            log.debug(s.strip())  # Show output as it happens if debug==True
+        for line in p.stdout:
+            output += line
+            log.debug(line.strip())  # Show output as it happens if debug==True
     output = output.strip()
-    if p.stderr and (stderr := p.stderr.read().strip()):
-        log.error(stderr)
+    if p.stderr:
+        stderr = p.stderr.read().strip()
     err = p.poll()
     if err and not (err == 1 and output.endswith("set --after option to 'no_reset'.")):
         # Ignore the "set --after" warning message and ercode for esp32s2.
         # If we add "--after no_reset", reconnects to the device fail repeatedly
         log.error(f"Error: {cmd} returns error {err}.")
         if stderr:
-            print(stderr)
+            log.warning(stderr)
         if output:
-            print(output)
+            log.info(output)
         raise CalledProcessError(p.returncode, cmd, output, stderr)
+    elif stderr:
+        log.warning(stderr)
     return output
 
 
