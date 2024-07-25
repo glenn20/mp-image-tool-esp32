@@ -274,9 +274,9 @@ def process_arguments() -> None:
 
     if isinstance(image.file, Esp32DeviceFileWrapper):
         if args.no_reset:
-            log.action("Staying in bootloader.")
+            log.action("Leaving device in bootloader mode...")
         else:
-            log.action("Hard resetting via RTS pin...")
+            log.action("Resetting out of bootloader mode using RTS pin...")
             image.file.reset_device()
 
     image.file.close()
