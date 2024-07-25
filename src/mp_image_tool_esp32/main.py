@@ -126,12 +126,11 @@ def process_arguments() -> None:
     namespace = TypedNamespace()
     parser = argparse_typed.parser(usage, namespace)
     args = parser.parse_args(namespace=namespace)
+    progname = os.path.basename(sys.argv[0])
 
     log.setLevel("DEBUG" if args.debug else "WARNING" if args.quiet else "INFO")
-
-    log.info(
-        f"Running {os.path.basename(sys.argv[0])} {__version__} "
-        f"(Python version {platform.python_version()})."
+    log.action(
+        f"Running {progname} {__version__} (Python {platform.python_version()})."
     )
     # Use u0, a0, and c0 as aliases for /dev/ttyUSB0. /dev/ttyACM0 and COM0
     input: str = args.filename  # the input firmware filename
@@ -286,7 +285,7 @@ def process_arguments() -> None:
 def main() -> int:
     try:
         process_arguments()
-    except (PartitionError, ValueError, FileNotFoundError) as err:
+    except Exception as err:
         log.error(f"{type(err).__name__}: {err}")
         if isinstance(err, PartitionError) and err.table:
             err.table.print()

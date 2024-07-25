@@ -15,7 +15,8 @@ import hashlib
 import re
 import struct
 from functools import cached_property
-from typing import Any, Generator, Iterable, List, NamedTuple
+from itertools import takewhile
+from typing import Any, Iterable, List, NamedTuple
 
 from . import logger as log
 from .argtypes import KB, MB
@@ -98,14 +99,14 @@ def _make_table(
 
 class Part(PartTuple):
     @staticmethod
-    def from_bytes(data: bytes) -> Part | None:
+    def from_bytes(data: bytes) -> Part:
         """Return a `Part` built from `data`, which is an entry in the partition
-        table or `None` if not a valid partition."""
-        return (
-            Part(*struct.unpack(PART_FMT, data))
-            if data.startswith(PART_MAGIC)
-            else None
-        )
+        table."""
+        return Part(*struct.unpack(PART_FMT, data))
+
+    def is_valid(self) -> bool:
+        """Check if the partition is valid."""
+        return self.magic == PART_MAGIC
 
     def to_bytes(self) -> bytes:
         """Save the partition as an entry in a partition table in firmware."""
@@ -177,39 +178,45 @@ class PartitionTable(List[Part]):
         return _make_table(format, header, data)
 
     @staticmethod
-    def _parts_from_bytes(data: bytes) -> Generator[Part, None, None]:
-        """Yield `Part`s from `data`, which is a partition table in firmware."""
-        for i in range(0, max(len(data), PART_TABLE_SIZE) - PART_LEN, PART_LEN):
-            if p := Part.from_bytes(data[i : i + PART_LEN]):
-                yield p
-            else:
-                return
-
-    def from_bytes(self, data: bytes) -> None:
+    def from_bytes(
+        data: bytes, flash_size: int = 0, chip_name: str = ""
+    ) -> PartitionTable:
         """Build the partition table from the records in `data` where `data`
         is a partition table from an ESP32 firmware file or device."""
-        self.extend(self._parts_from_bytes(data))
-        if len(self) == 0:
-            raise PartitionError("No partition table found.", self)
-        n = len(self) * PART_LEN
+        table = PartitionTable(flash_size, chip_name)
+        parts = takewhile(
+            Part.is_valid,
+            (
+                Part.from_bytes(part)
+                for part in (
+                    data[i : i + PART_LEN] for i in range(0, len(data), PART_LEN)
+                )
+            ),
+        )
+        table.extend(parts)
+        if len(table) == 0:
+            raise PartitionError("No partition table found.", table)
+        n = len(table) * PART_LEN
+        chksum_part = data[n : n + PART_LEN]
         # Check if there is a checksum record at the end of the partition table
-        if data[n : n + len(PART_CHKSUM_MAGIC)] == PART_CHKSUM_MAGIC:
-            chksum = data[n + 16 : n + PART_LEN]
+        if chksum_part.startswith(PART_CHKSUM_MAGIC):
+            chksum = chksum_part[-16:]  # Last 16 bytes are the checksum
             md5 = hashlib.md5(data[:n]).digest()
             if md5 != chksum:  # Verify the checksum
                 raise PartitionError(
-                    f"Checksum: expected {chksum.hex()}, got {md5.hex()}.", self
+                    f"Checksum: expected {chksum.hex()}, got {md5.hex()}.", table
                 )
             n += PART_LEN
         # Check that there is at least one empty row next in partition table
         if data[n : n + PART_LEN] != b"\xff" * PART_LEN:
             raise PartitionError(
-                "Partition table does not end with an empty row.", self
+                "Partition table does not end with an empty row.", table
             )
-        self.sort(key=lambda p: p.offset)
-        if not self.flash_size:  # Infer flash size from partition table
-            self.flash_size = self[-1].offset + self[-1].size
-        self.check()
+        table.sort(key=lambda p: p.offset)
+        if not table.flash_size:  # Infer flash size from partition table
+            table.flash_size = table[-1].offset + table[-1].size
+        table.check()
+        return table
 
     def to_bytes(self) -> bytes:
         """Save the partition table in firmware format."""
