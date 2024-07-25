@@ -22,7 +22,7 @@ from argparse import ArgumentParser, Namespace
 from itertools import takewhile
 from typing import Any, Sequence, get_type_hints
 
-actions = {
+action_aliases = {
     "S": "store",
     "T": "store_true",
     "SC": "store_const",
@@ -58,9 +58,10 @@ class TypedArgumentParser:
     ) -> None:
         kwargs: dict[str, Any] = {}
         if len(metavars) > 1:
-            kwargs.update({"metavar": metavars, "nargs": len(metavars)})
+            kwargs["metavar"] = metavars
+            kwargs["nargs"] = len(metavars)
         elif len(metavars) == 1:
-            kwargs.update({"metavar": metavars[0]})
+            kwargs["metavar"] = metavars[0]
 
         # Get the type hint for the argument from the typed_namespace
         argtype = self._get_argument_type(options[-1])
@@ -70,9 +71,8 @@ class TypedArgumentParser:
             # default for bool, unless action or fun have been set
             action = "store_true"
 
-        if action:
-            # Convert from aliases in actions dict to full name
-            kwargs["action"] = actions.get(action, action)
+        if action:  # Expand any aliases in the action name
+            kwargs["action"] = action_aliases.get(action, action)
         if help:
             kwargs["help"] = help
 

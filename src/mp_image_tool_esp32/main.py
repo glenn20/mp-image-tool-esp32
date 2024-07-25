@@ -80,8 +80,8 @@ usage = """
 
     filename            | the esp32 firmware image filename or serial device
     -o --output FILE    | output filename
-    -q --quiet          | mute program output
-    -d --debug          | print additional info
+    -q --quiet          | set debug level to WARNING (default: INFO)
+    -d --debug          | set debug level to DEBUG (default: INFO)
     -n --no-reset       | do not reset the device after esptool.py commands
     -x --extract-app    | extract .app-bin from firmware
     -f --flash-size SIZE| size of flash for new partition table

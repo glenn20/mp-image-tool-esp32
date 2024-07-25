@@ -22,7 +22,7 @@ log_color = {
     ERROR: RED,
     CRITICAL: RED,
 }
-levels = {
+log_levels = {
     "DEBUG": DEBUG,
     "INFO": INFO,
     "ACTION": ACTION,
@@ -43,11 +43,11 @@ def colour(msg: str, level: int) -> str:
 
 
 def setLevel(level: str) -> None:
-    logger.setLevel(levels.get(level.upper(), NOTSET))
+    logger.setLevel(log_levels.get(level.upper(), NOTSET))
 
 
 def isloglevel(level: str) -> bool:
-    return levels.get(level.upper(), ERROR) >= logger.getEffectiveLevel()
+    return log_levels.get(level.upper(), ERROR) >= logger.getEffectiveLevel()
 
 
 def _dolog(level: int, msg: str, *args: Any, **kwargs: Any) -> None:
