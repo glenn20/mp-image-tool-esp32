@@ -12,25 +12,33 @@ stdout.
 
 from __future__ import annotations
 
+import io
 import os
 import re
 import shlex
 import sys
-from subprocess import PIPE, CalledProcessError, Popen
+from contextlib import contextmanager
 from tempfile import NamedTemporaryFile
-from typing import IO, Any, BinaryIO
+from typing import IO, Any, BinaryIO, Generator
 
+import esptool  # type: ignore
 import tqdm
 from colorama import Fore
 
 from . import logger as log
-from .argtypes import KB, MB, B
+from .argtypes import KB, B, numeric_arg
 
 BAUDRATES = (115200, 230400, 460800, 921600, 1500000, 2000000, 3000000)
 
 BLOCKSIZE = B  # Default block size for erasing/writing regions of the flash storage
 
 baudrate = 460800  # Default baudrate for esptool.py
+
+reset_on_close = True  # Reset the device on close
+
+# These arguments are necessary for esptool.py to connect to the device
+# These prevent esptool.main() from resetting the device on finish
+esptool_args: str = "--after no_reset_stub --no-stub"
 
 tqdm_args: dict[str, Any] = {
     "ascii": " =",
@@ -80,84 +88,64 @@ def esptool_progress_bar(stdout: IO[str], size: int) -> str:
         return output
 
 
-class EspToolWrapper:
-    def __init__(self, port: str):
-        self.port: str = port
-        self.esptool_args: str = "--after no_reset"  # Default args for the commands
-        self.base: str = (
-            f"{sys.executable} -m esptool --baud {baudrate} --port {self.port}"
-        )
-
-    def read_flash(self, pos: int, size: int) -> bytes:
-        """Read `size` bytes from the device flash storage starting at `address`."""
-        with NamedTemporaryFile("w+b", prefix="mp-image-tool-esp32-") as f:
-            self.run(f"read_flash {pos:#x} {size:#x} {f.name}", size=size)
-            return f.read()
-
-    def write_flash(self, pos: int, data: bytes) -> int:
-        """Write the contents of `filename` to the device flash storage starting at `pos`."""
-        with NamedTemporaryFile("w+b", prefix="mp-image-tool-esp32-") as f:
-            f.write(data)
-            f.flush()
-            self.run(f"write_flash -z {pos:#x} {f.name}", size=len(data))
-            return len(data)
-
-    def erase_flash(self, pos: int, size: int) -> None:
-        """Erase the entire flash storage on the device."""
-        self.run(f"erase_region {pos:#x} {size:#x}")
-
-    def autodetect(self) -> tuple[str, int]:
-        """Auto detect and return (as a tuple) the `chip_name` and `flash_size`
-        attached to the serial device."""
-        output = self.run("flash_id")
-        match = re.search(r"^Detecting chip type[. ]*(ESP.*)$", output, re.MULTILINE)
-        chip_name: str = match.group(1).lower().replace("-", "") if match else ""
-        match = re.search(r"^Detected flash size: *([0-9]*)MB$", output, re.MULTILINE)
-        flash_size = int(match.group(1)) * MB if match else 0
-        if chip_name:
-            self.esptool_args = " ".join((self.esptool_args, "--chip", chip_name))
-        return chip_name, flash_size
-
-    def reset_device(self) -> None:
-        global esptool_args
-        if self.esptool_args.find("--after no_reset") != -1:
-            self.esptool_args = self.esptool_args.replace("--after no_reset", "")
-            self.run("flash_id")
-
-    def run(self, command: str, size: int = 0) -> str:
-        """Run the `esptool.py` command and return the output as a string.
-        A tqdm progress bar is shown for read/write greater than 16KB.
-        Errors in the `esptool.py` command are raised as a `CalledProcessError`."""
-        cmd = f"{self.base} {self.esptool_args} {command}"
-        args = shlex.split(cmd)
-        log.debug(f"$ {cmd}")  # Use Popen() to monitor progress messages in the output
-        p = Popen(args, stdout=PIPE, stderr=PIPE, text=True, bufsize=0)
-        output, stderr = "", ""
-        if log.isloglevel("info") and size > 32 * KB and p.stdout:
-            output = esptool_progress_bar(p.stdout, size)  # Show a progress bar
-            log.debug(output)
-        elif p.stdout:
-            for line in p.stdout:
-                output += line
-                log.debug(line.strip())  # Show output as it happens if debug==True
-        output = output.strip()
-        if p.stderr:
-            stderr = p.stderr.read().strip()
-        err = p.poll()
-        if err and not (
-            err == 1 and output.endswith("set --after option to 'no_reset'.")
-        ):
-            # Ignore the "set --after" warning message and ercode for esp32s2.
-            # If we add "--after no_reset", reconnects to the device fail repeatedly
-            log.error(f"Error: {cmd} returns error {err}.")
-            if stderr:
-                log.warning(stderr)
-            if output:
-                log.info(output)
-            raise CalledProcessError(p.returncode, cmd, output, stderr)
-        elif stderr:
+# A context manager to redirect stdout and stderr to a buffer
+# Will print stderr to stdout if an error occurs
+@contextmanager
+def redirect_stdout_stderr(
+    name: str = "esptool",
+) -> Generator[io.StringIO, None, None]:
+    """A contect manager to redirect stdout and stderr to StringIO buffers.
+    If an exception occurs, stderr will be printed to output.
+    The `stdout` StringIO buffer is returned.
+    """
+    sys.stdout = io.StringIO()  # Redirect stdout to a buffer
+    sys.stderr = io.StringIO()  # Redirect stderr to a buffer
+    try:
+        yield sys.stdout
+    except Exception as err:
+        output = sys.stdout.getvalue()
+        stderr = sys.stderr.getvalue()
+        sys.stdout = sys.__stdout__
+        sys.stderr = sys.__stderr__
+        log.error(f"Error: {name} returns {type(err).__name__}: {err}")
+        if stderr:
             log.warning(stderr)
-        return output
+        log.warning(output)
+    else:
+        output = sys.stdout.getvalue()
+        stderr = sys.stderr.getvalue()
+        sys.stdout = sys.__stdout__
+        sys.stderr = sys.__stderr__
+
+
+def esptool_run(command: str, esp: esptool.ESPLoader) -> str:
+    """Run the `esptool.py` command and return the output as a string."""
+    cmd = f"{esptool_args} {command}"
+    log.debug(f"$ {cmd}")
+    with redirect_stdout_stderr() as output:
+        esptool.main(shlex.split(cmd), esp)  # type: ignore
+    return output.getvalue()
+
+
+def esptool_connect(port: str) -> tuple[esptool.ESPLoader, str, int]:
+    """Connect to the ESP32 device on the specified serial `port`.
+    Returns a tuple of the `esp` object, `chip_name` and `flash_size`.
+    """
+    with redirect_stdout_stderr():
+        esp = esptool.cmds.detect_chip(port)  # type: ignore
+        esp = esp.run_stub()  # type: ignore
+    if esp is None or not isinstance(esp, esptool.ESPLoader):
+        raise ValueError(f"Failed to connect to device on port {port}.")
+
+    # Initialize the device and detect the flash size
+    esptool_run(f"--baud {baudrate} flash_id", esp)
+    chip_name: str = esp.CHIP_NAME.lower().replace("-", "")
+    size_str: str = esptool.cmds.detect_flash_size(esp)  # type: ignore
+    if not isinstance(size_str, str):
+        raise ValueError(f"Failed to detect flash size on device {chip_name}.")
+    flash_size: int = numeric_arg(size_str.rstrip("B"))
+    log.debug(f"Detected {chip_name} with flash size {flash_size}.")
+    return esp, chip_name, flash_size
 
 
 class Esp32DeviceFileWrapper(BinaryIO):
@@ -169,12 +157,13 @@ class Esp32DeviceFileWrapper(BinaryIO):
     def __init__(self, name: str):
         if not os.path.exists(name):
             raise FileNotFoundError(f"No such device: '{name}'")
-        self.esptool = EspToolWrapper(name)
+        self.esp, self.chip_name, self.flash_size = esptool_connect(name)
         self.pos = 0
         self.end = 0
 
     def read(self, nbytes: int | None = None) -> bytes:
-        data = self.esptool.read_flash(self.pos, nbytes or self.end - self.pos)
+        log.debug(f"Reading {nbytes:#x} bytes from {self.pos:#x}...")
+        data = self.esp.read_flash(self.pos, nbytes or self.end - self.pos, None)  # type: ignore
         if len(data) != nbytes:
             raise ValueError(f"Read {len(data)} bytes from device, expected {nbytes}.")
         self.pos += len(data)
@@ -191,9 +180,13 @@ class Esp32DeviceFileWrapper(BinaryIO):
                 f"Write at position {self.pos:#x} is not multiple of "
                 f"blocksize ({BLOCKSIZE:#x} bytes)."
             )
-        size = self.esptool.write_flash(self.pos, data)
-        self.pos += size
-        return size
+        with NamedTemporaryFile("w+b", prefix="mp-image-tool-esp32-") as f:
+            f.write(data)
+            f.flush()
+            esptool_run(f"write_flash -z {self.pos:#x} {f.name}", self.esp)
+            size = len(data)
+            self.pos += size
+            return size
 
     def seek(self, pos: int, whence: int = 0):
         self.pos = (0, self.pos, self.end)[whence] + pos
@@ -208,17 +201,16 @@ class Esp32DeviceFileWrapper(BinaryIO):
     def seekable(self) -> bool:
         return True
 
-    def reset_device(self) -> None:
-        self.esptool.reset_device()
-
     # Some additional convenience methods
     def erase(self, size: int) -> None:
         """Erase a region of the device flash storage using `esptool.py`.
         Size should be a multiple of `0x1000 (4096)`, the device block size"""
-        self.esptool.erase_flash(self.pos, size)
+        esptool_run(f"erase_region {self.pos:#x} {size:#x}", self.esp)
         self.pos += size
 
-    def autodetect(self) -> tuple[str, int]:
-        """Auto detect and return (as a tuple) the `chip_name` and `flash_size`
-        attached to the serial device."""
-        return self.esptool.autodetect()
+    def close(self) -> None:
+        if reset_on_close:
+            self.esp.hard_reset()
+        self.esp._port.close()  # type: ignore
+        self.pos = 0
+        self.end = 0

@@ -171,7 +171,8 @@ def open_image_device(filename: str) -> Esp32Params:
     """Open a serial device and return an `Esp32Image` object, which includes a
     File object wrapper around `esptool.py` to read and write to the device."""
     f = Esp32DeviceFileWrapper(filename)
-    detected_chip_name, detected_flash_size = f.autodetect()
+    detected_chip_name = f.chip_name
+    detected_flash_size = f.flash_size
     f.seek(BOOTLOADER_OFFSET[detected_chip_name])
     header = ImageFormat.from_file(f)
     bootloader = BOOTLOADER_OFFSET[header.chip_name]

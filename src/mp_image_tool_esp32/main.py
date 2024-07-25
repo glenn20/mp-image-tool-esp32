@@ -18,7 +18,15 @@ import re
 import shutil
 import sys
 
-from . import __version__, argparse_typed, argtypes, image_file, layouts, ota_update
+from . import (
+    __version__,
+    argparse_typed,
+    argtypes,
+    image_device,
+    image_file,
+    layouts,
+    ota_update,
+)
 from . import logger as log
 from .argtypes import KB, MB, ArgList, PartList
 from .image_device import BLOCKSIZE, Esp32DeviceFileWrapper, set_baudrate
@@ -275,9 +283,10 @@ def process_arguments() -> None:
     if isinstance(image.file, Esp32DeviceFileWrapper):
         if args.no_reset:
             log.action("Leaving device in bootloader mode...")
+            image_device.reset_on_close = False
         else:
             log.action("Resetting out of bootloader mode using RTS pin...")
-            image.file.reset_device()
+            image_device.reset_on_close = True
 
     image.file.close()
 
