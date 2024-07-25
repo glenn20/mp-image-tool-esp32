@@ -232,7 +232,10 @@ class Esp32Image(Esp32Params):
 
     def _check_app_image(self, data: bytes, name: str) -> bool:
         """Check that `data` is a valid app image for this device/firmware."""
-        header = ImageFormat(data)
+        try:
+            header = ImageFormat(data)
+        except ValueError:
+            return False
         if not header.chip_name:  # `data` is not an app image
             return False
         if header.chip_name != self.chip_name:
