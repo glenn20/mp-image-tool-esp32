@@ -17,6 +17,7 @@ import platform
 import re
 import shutil
 import sys
+from pathlib import Path
 
 from . import (
     __version__,
@@ -256,13 +257,13 @@ def process_arguments() -> None:
     if args.read:  # --read NAME1=FILE1[,...]: Read contents of parts into FILES
         for name, filename in args.read:
             log.action(f"Saving partition '{name}' into '{filename}'...")
-            n = image.read_part_to_file(name, filename)
+            n = Path(filename).write_bytes(image.read_part(name))
             log.info(f"Wrote {n:#x} bytes to '{filename}'.")
 
     if args.write:  # --write NAME1=FILE1[,...] : Write FILES into partitions
         for name, filename in args.write:
             log.action(f"Writing partition '{name}' from '{filename}'...")
-            n = image.write_part_from_file(name, filename)
+            n = image.write_part(name, Path(filename).read_bytes())
             log.info(f"Wrote {n:#x} bytes to partition '{name}'.")
 
     if args.ota_update:  # --ota-update FILE : Perform an OTA firmware upgrade

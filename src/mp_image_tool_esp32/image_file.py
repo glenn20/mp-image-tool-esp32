@@ -282,12 +282,6 @@ class Esp32Image(Esp32Params):
         f.seek(part.offset)
         return f.read(part.size)
 
-    def read_part_to_file(self, part: Part | str, output: str) -> int:
-        """Read contents of the `part` partition from `image` into a file"""
-        data = self.read_part(self._get_part(part))  # Read data before creating file
-        with open(output, "wb") as fout:
-            return fout.write(data)
-
     def write_part(self, part: Part | str, data: bytes) -> int:
         """Write contents of `data` into the `part` partition in `image`."""
         part = self._get_part(part)
@@ -313,10 +307,6 @@ class Esp32Image(Esp32Params):
             else:
                 f.write(b"\xff" * (part.size - n))
         return n - pad
-
-    def write_part_from_file(self, part: Part | str, input: str) -> int:
-        """Write contents of `input` file into the `part` partition in `image`."""
-        return self.write_part(self._get_part(part), Path(input).read_bytes())
 
     def check_app_partitions(self, new_table: PartitionTable) -> None:
         """Check that the app partitions contain valid app image signatures."""
