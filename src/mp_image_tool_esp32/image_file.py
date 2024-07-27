@@ -23,7 +23,7 @@ from functools import cached_property
 from . import logger as log
 from .argtypes import MB
 from .espdeviceio import ESPDeviceIO
-from .image_header import BLOCKSIZE, BOOTLOADER_OFFSET, ImageFormat
+from .image_header import BLOCKSIZE, BOOTLOADER_OFFSET, ImageHeader
 from .partition_table import BOOTLOADER_SIZE, Part, PartitionTable
 
 
@@ -42,7 +42,7 @@ class FirmwareFileWithOffset(io.BufferedRandom):
     def __init__(self, name: str):
         # Detach the raw base file from `file` and attach it to this object
         f = open(name, "r+b")
-        hdr = ImageFormat.from_file(f)
+        hdr = ImageHeader.from_file(f)
         self.chip_name = hdr.chip_name
         self.flash_size = hdr.flash_size
         self.flash_size_str = f"{hdr.flash_size//MB}MB"
@@ -121,7 +121,7 @@ class Esp32Image:
     def _check_app_image(self, data: bytes, name: str) -> bool:
         """Check that `data` is a valid app image for this device/firmware."""
         try:
-            header = ImageFormat(data)
+            header = ImageHeader(data)
         except ValueError:
             return False
         if not header.chip_name:  # `data` is not an app image
@@ -222,7 +222,7 @@ class Esp32Image:
                 log.action(f"Erasing data partition: {newp.name}...")
                 self.erase_part(newp, min(newp.size, 4 * self.BLOCKSIZE))
 
-    def check_image_hash(self, image: ImageFormat) -> tuple[int, bytes]:
+    def check_image_hash(self, image: ImageHeader) -> tuple[int, bytes]:
         """Check the sha256 hash at the end of the bootloader image data."""
         n = image.HEADER_SIZE
         for i in range(image.num_segments):  # Skip over each segment in the image
@@ -233,18 +233,18 @@ class Esp32Image:
         n = (n + 0xF) & ~0xF  # Round up to a multiple of 16 bytes
         return n, hashlib.sha256(image.data[:n]).digest()
 
-    def update_image_hash(self, image: ImageFormat) -> ImageFormat:
+    def update_image_hash(self, image: ImageHeader) -> ImageHeader:
         """Update the sha256 hash at the end of the bootloader image data."""
         size, sha = self.check_image_hash(image)
         log.action(f"Updating bootloader sha256 hash: {sha.hex()}")
-        return ImageFormat(image.data[:size] + sha + image.data[size + len(sha) :])
+        return ImageHeader(image.data[:size] + sha + image.data[size + len(sha) :])
 
     def update_bootloader(self, *, flash_size: int) -> None:
         """Update the bootloader header with the `flash_size`, if it has changed."""
         f = self.file
         f.seek(self.bootloader)
         # Read the whole bootloader image
-        image = ImageFormat(f.read(BOOTLOADER_SIZE))
+        image = ImageHeader(f.read(BOOTLOADER_SIZE))
         new_image = image.copy(flash_size=flash_size)
         # Update the header with the new flash size
         if new_image.hash_appended:

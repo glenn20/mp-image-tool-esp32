@@ -5,7 +5,7 @@ from typing_extensions import Buffer
 
 from . import logger as log
 from .esptool_ops import BLOCKSIZE, esptool_wrapper
-from .image_header import BOOTLOADER_OFFSET, ImageFormat
+from .image_header import BOOTLOADER_OFFSET, ImageHeader
 
 
 class ESPDeviceIO(BinaryIO):
@@ -34,7 +34,7 @@ class ESPDeviceIO(BinaryIO):
         self.end = self.flash_size
         self.bootloader = BOOTLOADER_OFFSET[self.chip_name]
         self.seek(BOOTLOADER_OFFSET[self.chip_name])
-        hdr = ImageFormat.from_file(self)
+        hdr = ImageHeader.from_file(self)
         self.app_size = 0  # Unknown app size
         if self.chip_name and self.chip_name != hdr.chip_name:
             log.warning(

@@ -6,7 +6,9 @@ from typing import BinaryIO
 
 MB = 0x100_000  # 1 Megabyte
 
-BLOCKSIZE = 0x1_000  # Default block size for erasing/writing regions of the flash storage
+BLOCKSIZE = (
+    0x1_000  # Default block size for erasing/writing regions of the flash storage
+)
 
 # Fields in the image bootloader header
 BOOTLOADER_OFFSET = {
@@ -20,7 +22,7 @@ BOOTLOADER_OFFSET = {
 }
 
 
-class ImageFormat:
+class ImageHeader:
     """A class to represent the esp32 firmware image format. Provides methods to
     read and write the image header."""
 
@@ -74,10 +76,10 @@ class ImageFormat:
         """Return the number of segments in this image."""
         return self.data[self.NUM_SEGMENTS_OFFSET]
 
-    def copy(self, flash_size: int = 0) -> ImageFormat:
+    def copy(self, flash_size: int = 0) -> ImageHeader:
         """Return a new bootloader header with the `flash_size` updated."""
         if flash_size == 0:
-            return ImageFormat(self.data)
+            return ImageHeader(self.data)
         size_MB = flash_size // MB
         if not (0 <= size_MB <= 128):
             raise ValueError(f"Invalid flash size: {flash_size:#x}.")
@@ -86,9 +88,9 @@ class ImageFormat:
         new_header[self.FLASH_SIZE_OFFSET] = (round(math.log2(size_MB)) << 4) | (
             self.data[self.FLASH_SIZE_OFFSET] & 0xF
         )
-        return ImageFormat(bytes(new_header))
+        return ImageHeader(bytes(new_header))
 
     @classmethod
-    def from_file(cls, f: BinaryIO) -> ImageFormat:
+    def from_file(cls, f: BinaryIO) -> ImageHeader:
         """Read the bootloader header from the firmware file or serial device."""
         return cls(f.read(cls.HEADER_SIZE))
