@@ -19,19 +19,12 @@ import shutil
 import sys
 from pathlib import Path
 
-from . import (
-    __version__,
-    argparse_typed,
-    argtypes,
-    image_device,
-    image_file,
-    layouts,
-    ota_update,
-)
+from . import __version__, argtypes, layouts
 from . import logger as log
+from . import ota_update
+from .argparse_typed import parser as typed_parser
 from .argtypes import KB, MB, ArgList, PartList
-from .image_device import BLOCKSIZE, Esp32DeviceFileWrapper, set_baudrate
-from .image_file import Esp32Image
+from .image_file import Esp32Image, is_device
 from .partition_table import NAME_TO_TYPE, PartitionError, PartitionTable
 
 
@@ -60,6 +53,7 @@ class TypedNamespace(argparse.Namespace):
     extract_app: bool
     flash_size: int
     app_size: int
+    method: str
     no_rollback: bool
     ota_update: str
     baud: int
@@ -73,9 +67,9 @@ class TypedNamespace(argparse.Namespace):
     read: ArgList
     write: ArgList
     _type_conversions = {  # Map types to funcs which return type from a string arg.
-        int: argtypes.numeric_arg,  # Convert arg to an integer.
-        PartList: argtypes.partlist,  # Convert arg to a list of Part tuples.
-        ArgList: argtypes.arglist,  # Convert arg to a list[list[str]].
+        int: argtypes.numeric_arg,  # Convert str to an integer.
+        PartList: argtypes.partlist,  # Convert str to a list of Part tuples.
+        ArgList: argtypes.arglist,  # Convert str to a list[list[str]].
     }
 
 
@@ -95,6 +89,7 @@ usage = """
     -x --extract-app    | extract .app-bin from firmware
     -f --flash-size SIZE| size of flash for new partition table
     -a --app-size SIZE  | size of factory and ota app partitions
+    -m --method METHOD  | esptool method: subprocess, command or direct (default)
     --check             | check app partitions and OTA config are valid
     --no-rollback       | disable app rollback after OTA update
     --baud RATE         | baud rate for serial port (default: 460800)
@@ -133,7 +128,7 @@ usage = """
 
 def process_arguments() -> None:
     namespace = TypedNamespace()
-    parser = argparse_typed.parser(usage, namespace)
+    parser = typed_parser(usage, namespace)
     args = parser.parse_args(namespace=namespace)
     progname = os.path.basename(sys.argv[0])
 
@@ -147,14 +142,16 @@ def process_arguments() -> None:
     input = re.sub(r"^a([0-9]+)$", r"/dev/ttyACM\1", input)
     input = re.sub(r"^c([0-9]+)$", r"COM\1", input)
     basename: str = os.path.basename(input)
-    what: str = "esp32 device" if image_file.is_device(input) else "image file"
-
-    if args.baud:
-        log.info(f"Using baudrate {set_baudrate(args.baud)}")
+    what: str = "esp32 device" if is_device(input) else "image file"
 
     # Open input (args.filename) from firmware file or esp32 device
     log.action(f"Opening {what}: {input}...")
-    image: Esp32Image = Esp32Image(input)
+    image: Esp32Image = Esp32Image(
+        input,
+        args.baud,
+        reset_on_close=not args.no_reset,
+        esptool_method=args.method,
+    )
     log.info(f"Firmware Chip type: {image.chip_name}")
     log.info(f"Firmware Flash size: {image.flash_size // MB}MB")
     table: PartitionTable = copy.copy(image.table)
@@ -252,7 +249,7 @@ def process_arguments() -> None:
             if part.subtype_name not in ("fat",):
                 raise PartitionError(f"partition '{part.name}' is not a fs partition.")
             log.action(f"Erasing filesystem on partition '{part.name}'...")
-            image.erase_part(part, 4 * BLOCKSIZE)
+            image.erase_part(part, 4 * 0x1000)
 
     if args.read:  # --read NAME1=FILE1[,...]: Read contents of parts into FILES
         for name, filename in args.read:
@@ -280,14 +277,6 @@ def process_arguments() -> None:
             log.info(f"Next OTA boot partition: {ota.get_next_update().name}")
         except PartitionError:
             pass  # No OTA partitions
-
-    if isinstance(image.file, Esp32DeviceFileWrapper):
-        if args.no_reset:
-            log.action("Leaving device in bootloader mode...")
-            image_device.reset_on_close = False
-        else:
-            log.action("Resetting out of bootloader mode using RTS pin...")
-            image_device.reset_on_close = True
 
     image.file.close()
 
