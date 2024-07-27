@@ -24,8 +24,8 @@ B = 0x1_000  # 1 Block (4096 bytes)
 SIZE_UNITS = {"M": MB, "K": KB, "B": B}
 
 # Delimiters for splitting up and stripping values of command arguments
-# First level split is on "," and then on "=" or ":" or "-"
-DELIMITERS = [r"\s*,\s*", r"\s*[=:-]\s*"]
+# First level split is on "," and then on "=" or ":"
+DELIMITERS = [r"\s*,\s*", r"\s*[=:]\s*"]
 
 if sys.version_info >= (3, 10):
     # Convenient type aliases for static type checking of arguments
@@ -60,7 +60,7 @@ def numeric_arg(arg: str) -> int:
 
 def arglist(arg: str) -> ArgList:
     """Split command line arguments into a list of list of strings.
-    The string is delimited first by "," and then by "=", ":" or "-".
+    The string is delimited first by "," and then by "=", ":"
     eg: `"nvs=nvs.bin,vfs=vfs.bin"` -> `[["nvs", "nvs.bin"], ["vfs", "vfs.bin"]]`
     """
     return [re.split(DELIMITERS[1], s) for s in re.split(DELIMITERS[0], arg.strip())]
