@@ -72,7 +72,8 @@ class FirmwareDevice(IO[bytes]):
         if not os.path.exists(port):
             raise FileNotFoundError(f"No such device: '{port}'")
         self.esptool = esptool_wrapper(port, baud, method=esptool_method)
-        self.reset_on_close = not reset_on_close
+        self.baud = self.esptool.baud
+        self.reset_on_close = reset_on_close
         chip_name = self.esptool.chip_name
         flash_size = self.esptool.flash_size
         self.pos = 0
@@ -176,3 +177,4 @@ class Firmware:
         self.is_device = is_device(filename)
         self.file.seek(self.bootloader)
         self.header = hdr
+        self.baud = 0
