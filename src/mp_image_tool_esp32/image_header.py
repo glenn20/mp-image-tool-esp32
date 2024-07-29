@@ -141,7 +141,7 @@ class ImageHeader(ImageHeaderStruct):
         return ImageHeader.from_bytes(bytes(self))
 
     @classmethod
-    def from_bytes(cls, data: bytes) -> ImageHeader:
+    def from_bytes(cls, data: bytes | bytearray) -> ImageHeader:
         """Read the image header from a file."""
         return cls.from_buffer_copy(data).check()
 
@@ -156,7 +156,7 @@ class ImageHeader(ImageHeaderStruct):
 
 def get_image_size(data: bytes | bytearray) -> int:
     """Return the size of the application or bootloader image in `data`."""
-    hdr = ImageHeader.from_buffer(data)
+    hdr = ImageHeader.from_bytes(data)
     n = hdr.size
     for _ in range(hdr.num_segments):  # Skip over each segment in the image
         segment_size = int.from_bytes(data[n + 4 : n + 8], "little")
@@ -170,6 +170,12 @@ def calculate_image_size_and_hash(data: bytes | bytearray) -> tuple[int, bytes]:
     """Check the sha256 hash at the end of the bootloader image data."""
     n = get_image_size(data)
     return n, hashlib.sha256(data[:n]).digest()
+
+
+def check_image_hash(data: bytes | bytearray) -> Tuple[int, bytes, bytes]:
+    """Check the sha256 hash at the end of the bootloader image data."""
+    n, sha = calculate_image_size_and_hash(data)
+    return n, sha, bytes(data[n : n + len(sha)])  # Return the calculated and stored hashes
 
 
 def update_image(hdr: ImageHeader, data: bytes | bytearray) -> Tuple[bytearray, int]:

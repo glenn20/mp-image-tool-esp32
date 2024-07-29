@@ -22,7 +22,7 @@ from typing import Tuple
 from . import logger as log
 from .argtypes import MB
 from .firmware_file import Firmware
-from .image_header import ImageHeader, update_image
+from .image_header import ImageHeader, check_image_hash, update_image
 from .partition_table import BOOTLOADER_SIZE, Part, PartitionTable
 
 
@@ -89,7 +89,7 @@ class Esp32Image(Firmware):
             )
         if name == "bootloader" and header.flash_size != self.header.flash_size:
             log.warning(
-                f"'{name}': App {header.flash_size=} "
+                f"'{name}': image flash size ({header.flash_size}) "
                 f"does not match bootloader ({self.header.flash_size})."
             )
         return True
@@ -145,7 +145,24 @@ class Esp32Image(Firmware):
             f.erase(part.size - n)  # Bypass write() to erase the flash
         return n - pad
 
-    def check_app_partitions(self, new_table: PartitionTable) -> None:
+    def read_firmware(self) -> bytes:
+        """Return the contents of the `part` partition from `image` as `bytes"""
+        f = self.file
+        f.seek(self.bootloader)
+        return f.read()
+
+    def write_firmware(self, data: bytes) -> int:
+        """Write contents of `data` into the `part` partition in `image`."""
+        f = self.file
+        f.seek(self.bootloader)
+        size = f.write(bytes(data))
+        if size < len(data):
+            raise ValueError(f"Failed to write {len(data)} bytes to '{self.filename}'.")
+        return size
+
+    def check_app_partitions(
+        self, new_table: PartitionTable, check_hash: bool = False
+    ) -> None:
         """Check that the app partitions contain valid app image signatures."""
         f = self.file
         for part in (
@@ -153,10 +170,20 @@ class Esp32Image(Firmware):
         ):
             # Check there is an app at the start of the partition
             f.seek(part.offset)
-            if not self._check_app_image(f.read(self.BLOCKSIZE), part.name):
+            data = f.read(part.size if check_hash else self.BLOCKSIZE)
+            if not self._check_app_image(data, part.name):
                 log.warning(f"Partition '{part.name}': App image signature not found.")
+                continue
+            log.action(f"Partition '{part.name}' App image signature found.")
+            if not check_hash:
+                continue
+            n, calc_sha, stored_sha = check_image_hash(data)
+            if calc_sha != stored_sha:
+                log.warning(
+                    f"Partition '{part.name}': Hash mismatch ({calc_sha=} {stored_sha=} {n=})"
+                )
             else:
-                log.action(f"Partition '{part.name}' App image signature found.")
+                log.action(f"Partition '{part.name}' Hash confirmed.")
 
     def check_data_partitions(self, new_table: PartitionTable) -> None:
         """Erase any data partitions in `new_table` which have been moved or resized."""
