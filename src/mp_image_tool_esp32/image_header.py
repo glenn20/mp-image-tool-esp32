@@ -1,96 +1,185 @@
 from __future__ import annotations
 
+import binascii
+import hashlib
 import math
-from functools import cached_property
-from typing import BinaryIO
-
-MB = 0x100_000  # 1 Megabyte
-
-BLOCKSIZE = (
-    0x1_000  # Default block size for erasing/writing regions of the flash storage
+from ctypes import (
+    Array,
+    LittleEndianStructure,
+    Structure,
+    c_uint8,
+    c_uint16,
+    c_uint32,
+    sizeof,
 )
+from functools import cached_property
+from typing import IO, Any, Tuple
 
-# Fields in the image bootloader header
-BOOTLOADER_OFFSET = {
-    "esp32": 0x1_000,  # 0x1000 bytes
-    "esp32s2": 0x1_000,  # 0x1000 bytes
-    "esp32s3": 0,
-    "esp32c2": 0,
-    "esp32c3": 0,
-    "esp32c6": 0,
-    "esp32h2": 0,
-}
+MB = 1024 * 1024
 
 
-class ImageHeader:
+# See https://docs.espressif.com/projects/esptool/en/latest/esp32
+# /advanced-topics/firmware-image-format.html
+class ImageHeaderStruct(LittleEndianStructure):
+    """A ctypes structure to represent the fields in the esp32 firmware image
+    header."""
+
+    _pack_ = 1
+    _fields_ = [
+        ("magic", c_uint8),
+        ("num_segments", c_uint8),
+        ("spi_flash_mode", c_uint8),
+        ("flash_frequency_id", c_uint8, 4),
+        ("flash_size_id", c_uint8, 4),
+        ("entry_point_address", c_uint32),
+        ("spi_rom_pins", c_uint8 * 4),
+        ("chip_id", c_uint16),
+        ("deprecated", c_uint8),
+        ("min_chip_revision", c_uint16),
+        ("max_chip_revision", c_uint16),
+        ("_reserved", c_uint8 * 4),
+        ("hash_appended", c_uint8),
+    ]
+    magic: int
+    num_segments: int
+    spi_flash_mode: int
+    flash_frequency_id: int
+    flash_size_id: int
+    entry_point_address: int
+    spi_rom_pins: bytes
+    chip_id: int
+    deprecated: int
+    min_chip_revision: int
+    max_chip_revision: int
+    _reserved: bytes
+    hash_appended: int
+
+
+assert sizeof(ImageHeaderStruct) == 24
+
+
+def ctypes_repr(x: Any, indent: str = "") -> str:
+    """Return a string representation of a ctypes object.
+    Will recursively unpack and format nested structures and arrays."""
+    if isinstance(x, Array):
+        return f"[{', '.join(repr(i) for i in x)}]"
+    elif isinstance(x, Structure):
+        indent += "  "
+        args = "\n".join(
+            (
+                f"  {f}={ctypes_repr(getattr(x, f), indent)},"
+                for f, *_ in x._fields_
+                if not f[0].startswith("_")
+            )
+        )
+        return f"{x.__class__.__name__}(\n{args}\n)"
+    else:
+        return repr(x)
+
+
+class ImageHeader(ImageHeaderStruct):
     """A class to represent the esp32 firmware image format. Provides methods to
     read and write the image header."""
 
-    # See https://docs.espressif.com/projects/esptool/en/latest/esp32
-    # /advanced-topics/firmware-image-format.html
-
-    HEADER_SIZE = 8 + 16  # Size of the image file headers
-    APP_IMAGE_MAGIC = b"\xe9"  # Starting bytes for firmware files
-    MAGIC_OFFSET = 0  # Offset of the magic byte in the image file
-    NUM_SEGMENTS_OFFSET = 1  # Number of segments in the image file
-    FLASH_SIZE_OFFSET = 3  # Flash size is in high 4 bits of byte 3 in file
-    CHIP_ID_OFFSET = 12  # Chip-type is in bytes 12 and 13 of file
-    HASH_APPENDED_OFFSET = 23  # Offset of flag that hash is appended to end of image
+    APP_IMAGE_MAGIC = 0xE9
     CHIP_IDS = {  # Map from chip ids in the image file header to esp32 chip names.
-        0: "esp32",
-        2: "esp32s2",
-        9: "esp32s3",
-        12: "esp32c2",
-        5: "esp32c3",
-        13: "esp32c6",
-        16: "esp32h2",
+        0x00: "esp32",
+        0x02: "esp32s2",
+        0x05: "esp32c3",
+        0x09: "esp32s3",
+        0x0C: "esp32c2",
+        0x0D: "esp32c6",
+        0x10: "esp32h2",
+        0x12: "esp32p4",
+        0xFFFF: "invalid",
     }
-    data: bytes
+    initial_crc32: int  # Checksum of the image header
 
-    def __init__(self, data: bytes) -> None:
-        self.data = data
-        if not self.data[self.MAGIC_OFFSET] == self.APP_IMAGE_MAGIC[0]:
+    def __init__(self, *args: Any, **kwargs: Any):
+        super().__init__(*args, **kwargs)
+        self.check()
+
+    def check(self) -> ImageHeader:
+        if self.magic != self.APP_IMAGE_MAGIC:
             raise ValueError("Invalid image file: magic bytes not found.")
+        if self.chip_name == "invalid":
+            raise ValueError("Invalid chip id in image header.")
+        self.initial_crc32 = binascii.crc32(self)  # Calculate the checksum
+        return self
+
+    def ismodified(self) -> bool:
+        """Return True if the bootloader header has been modified."""
+        return binascii.crc32(self) != self.initial_crc32
 
     @cached_property
     def chip_name(self) -> str:
         """Return the chip name from the bootloader header."""
-        chip_id = self.data[self.CHIP_ID_OFFSET] | (
-            self.data[self.CHIP_ID_OFFSET + 1] << 8
-        )
-        return self.CHIP_IDS.get(chip_id, str(chip_id))
+        chip_name = self.CHIP_IDS.get(self.chip_id, str(self.chip_id))
+        if chip_name == "invalid":
+            raise ValueError("Invalid chip id in image header.")
+        return chip_name
 
-    @cached_property
+    @property
     def flash_size(self) -> int:
         """Return the flash size from the bootloader header."""
-        flash_id = self.data[self.FLASH_SIZE_OFFSET] >> 4
-        return (2**flash_id) * MB
+        return (2**self.flash_size_id) * MB
 
-    @cached_property
-    def hash_appended(self) -> bool:
-        """Return True if the image has a SHA256 hash appended."""
-        return self.data[self.HASH_APPENDED_OFFSET] == 1
-
-    @cached_property
-    def num_segments(self) -> int:
-        """Return the number of segments in this image."""
-        return self.data[self.NUM_SEGMENTS_OFFSET]
-
-    def copy(self, flash_size: int = 0) -> ImageHeader:
-        """Return a new bootloader header with the `flash_size` updated."""
-        if flash_size == 0:
-            return ImageHeader(self.data)
-        size_MB = flash_size // MB
-        if not (0 <= size_MB <= 128):
+    @flash_size.setter
+    def flash_size(self, flash_size: int) -> None:
+        """Set the flash size in the bootloader header."""
+        if not (0 <= flash_size <= 256 * MB):
             raise ValueError(f"Invalid flash size: {flash_size:#x}.")
-        # Flash size tag is written into top 4 bits of 4th byte of file
-        new_header = bytearray(self.data)
-        new_header[self.FLASH_SIZE_OFFSET] = (round(math.log2(size_MB)) << 4) | (
-            self.data[self.FLASH_SIZE_OFFSET] & 0xF
-        )
-        return ImageHeader(bytes(new_header))
+        self.flash_size_id = round(math.log2(flash_size / MB))
+
+    @property
+    def size(self) -> int:
+        """Return the size of the image header."""
+        return sizeof(self)
+
+    def copy(self) -> ImageHeader:
+        """Return a copy of the image header."""
+        return ImageHeader.from_bytes(bytes(self))
 
     @classmethod
-    def from_file(cls, f: BinaryIO) -> ImageHeader:
-        """Read the bootloader header from the firmware file or serial device."""
-        return cls(f.read(cls.HEADER_SIZE))
+    def from_bytes(cls, data: bytes) -> ImageHeader:
+        """Read the image header from a file."""
+        return cls.from_buffer_copy(data).check()
+
+    @classmethod
+    def from_file(cls, file: IO[bytes]) -> ImageHeader:
+        """Read the image header from a file."""
+        return cls.from_bytes(file.read(sizeof(cls)))
+
+    def __repr__(self) -> str:
+        return ctypes_repr(self) + f", ismodified={self.ismodified()}"
+
+
+def get_image_size(data: bytes | bytearray) -> int:
+    """Return the size of the application or bootloader image in `data`."""
+    hdr = ImageHeader.from_buffer(data)
+    n = hdr.size
+    for _ in range(hdr.num_segments):  # Skip over each segment in the image
+        segment_size = int.from_bytes(data[n + 4 : n + 8], "little")
+        n += segment_size + 8
+    n += 1  # Allow for the checksum byte
+    n = (n + 0xF) & ~0xF  # Round up to a multiple of 16 bytes
+    return n
+
+
+def calculate_image_size_and_hash(data: bytes | bytearray) -> tuple[int, bytes]:
+    """Check the sha256 hash at the end of the bootloader image data."""
+    n = get_image_size(data)
+    return n, hashlib.sha256(data[:n]).digest()
+
+
+def update_image(hdr: ImageHeader, data: bytes | bytearray) -> Tuple[bytearray, int]:
+    """Update the bootloader hash, if it has changed."""
+    if isinstance(data, bytes):
+        data = bytearray(data)
+    # Write the updated header to the start of the bootloader
+    data[: hdr.size] = bytes(hdr)  # Write the updated header
+    size = 0
+    if hdr.hash_appended == 1:
+        size, sha = calculate_image_size_and_hash(data)
+        data[size : size + len(sha)] = sha
+    return data, size

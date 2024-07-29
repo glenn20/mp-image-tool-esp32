@@ -151,16 +151,17 @@ def process_arguments() -> None:
         reset_on_close=not args.no_reset,
         esptool_method=args.method,
     )
-    what: str = "firmware device" if image.is_device else "firmware file"
-    log.info(f"Found {what}")
-    log.info(f"Firmware Chip type: {image.chip_name}")
-    log.info(f"Firmware Flash size: {image.flash_size // MB}MB")
-    table: PartitionTable = copy.copy(image.table)
+    what: str = "device" if image.is_device else "firmware file"
+    log.info(
+        f"Found {image.header.chip_name} {what} ({image.header.flash_size // MB}MB flash)."
+    )
+    new_table: PartitionTable = copy.copy(image.table)
+    new_header = image.file.header.copy()
     if image.app_size:
         x = image.app_size
         log.info(f"Micropython App size: {x:#x} bytes ({x // KB:,d} KB)")
     if log.isloglevel("info"):
-        layouts.print_table(table)
+        layouts.print_table(new_table)
     extension = ""  # Each op that changes table adds identifier to extension
 
     if args.extract_app:  # -x --extract-app : Extract app image from firmware
@@ -169,18 +170,20 @@ def process_arguments() -> None:
         image.save_app_image(output)
 
     if args.flash_size:  # -f --flash-size SIZE : Set size of the flash storage
-        if args.flash_size and args.flash_size != table.flash_size:
-            table.flash_size = args.flash_size
+        if args.flash_size != image.header.flash_size:
+            new_table.flash_size = args.flash_size
+            new_header.flash_size = args.flash_size
+            assert new_header.ismodified(), "Image header not modified!"
         extension += f"-{args.flash_size // MB}MB"
 
     if args.from_csv:  # --from-csv FILE : Replace part table from CSV file.
-        table = layouts.from_csv(table, args.from_csv)
+        new_table = layouts.from_csv(new_table, args.from_csv)
         extension += "-CSV"
 
     if args.table:  # --table default|ota|nvs=7B,factory=2M,vfs=0
         if args.table == [("ota", "", 0, 0)]:
             # ota_layout returns a string, so parse it into a PartList
-            args.table = argtypes.partlist(layouts.ota_layout(table, args.app_size))
+            args.table = argtypes.partlist(layouts.ota_layout(new_table, args.app_size))
             extension += "-OTA"
         elif args.table == [("default", "", 0, 0)]:
             # DEFAULT_TABLE_LAYOUT is a string, so parse it into a PartList
@@ -189,40 +192,40 @@ def process_arguments() -> None:
         else:
             extension += "-TABLE"
         # Build a partition table from the PartList
-        table = layouts.new_table(table, args.table)
-        table.check()
+        new_table = layouts.new_table(new_table, args.table)
+        new_table.check()
 
     if args.app_size:  # -a --app-size SIZE : Resize all the APP partitions
-        app_parts = filter(lambda p: p.type == NAME_TO_TYPE["app"], table)
+        app_parts = filter(lambda p: p.type == NAME_TO_TYPE["app"], new_table)
         for p in app_parts:
-            table.resize_part(p.name, args.app_size)
+            new_table.resize_part(p.name, args.app_size)
         extension += f"-appsize={args.app_size}"
 
     if args.delete:  # --delete name1[,name2,..] : Delete partition from table
         for name, *_ in args.delete:
-            table.remove(table.by_name(name))
+            new_table.remove(new_table.by_name(name))
         extension += f"-delete={argtypes.unsplit(args.delete)}"
 
     if args.resize:  # --resize NAME1=SIZE[,NAME2=...] : Resize partitions
         for name, *_, new_size in args.resize:
             log.action(f"Resizing {name} partition to {new_size:#x} bytes...")
-            table.resize_part(name, new_size)
-        table.check()
+            new_table.resize_part(name, new_size)
+        new_table.check()
         extension += f"-resize={argtypes.unsplit(args.resize)}"
 
     if args.add:  # --add NAME1=SUBTYPE:OFFSET:SIZE[,..] : Add new partitions
         for name, subtype, offset, size in args.add:
             subtype = layouts.get_subtype(name, subtype)
-            table.add_part(name, subtype, size, offset)
+            new_table.add_part(name, subtype, size, offset)
         extension += f"-add={argtypes.unsplit(args.add)}"
 
     ## Write modified partition table to a new file or back to flash storage
 
     if extension:  # A change has been made to the partition table
-        if table.app_part.offset != image.table.app_part.offset:
-            raise PartitionError("first app partition offset has changed", table)
+        if new_table.app_part.offset != image.table.app_part.offset:
+            raise PartitionError("first app partition offset has changed", new_table)
         if log.isloglevel("info"):
-            layouts.print_table(table)
+            layouts.print_table(new_table)
         if not image.is_device:  # If input is a firmware file, make a copy
             # Make a copy of the firmware file and open the new firmware...
             out = args.output or re.sub(r"([.][^.]+)?$", f"{extension}\\1", basename, 1)
@@ -230,8 +233,8 @@ def process_arguments() -> None:
             image.file.close()
             image = Esp32Image(out)
         # Update the firmware with the new partition table...
-        log.action(f"Writing to {what}: {image.filename}...")
-        image.update_table(table)
+        log.action(f"Writing to {image.header.chip_name} {what}: {image.filename}...")
+        image.update_image(new_table, new_header)
 
     ## For erasing/reading/writing flash storage partitions
 

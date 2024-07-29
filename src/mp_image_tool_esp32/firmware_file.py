@@ -6,7 +6,6 @@ from typing import IO, Union
 from typing_extensions import Buffer
 
 from . import logger as log
-from .argtypes import MB
 from .esptool_io import BLOCKSIZE, esptool_wrapper
 from .image_header import ImageHeader
 
@@ -149,9 +148,6 @@ class Firmware:
     filename: str
     file: Union[FirmwareFile, FirmwareDevice]
     header: ImageHeader
-    chip_name: str
-    flash_size: int
-    flash_size_str: str
     bootloader: int
     is_device: bool
     BLOCKSIZE: int = BLOCKSIZE
@@ -176,9 +172,6 @@ class Firmware:
             else FirmwareFile(filename)
         )
         hdr = self.file.header
-        self.chip_name = hdr.chip_name
-        self.flash_size = hdr.flash_size
-        self.flash_size_str = f"{hdr.flash_size//MB}MB"
         self.bootloader = BOOTLOADER_OFFSET[hdr.chip_name]
         self.is_device = is_device(filename)
         self.file.seek(self.bootloader)
