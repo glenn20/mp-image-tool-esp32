@@ -345,7 +345,7 @@ class ESPToolModuleDirect(ESPToolModuleMain):
         return len(data)
 
     def read_flash(self, pos: int, size: int) -> bytes:
-        data = self.esp.read_flash(pos, size, None)
+        data = self.esp.read_flash(pos, size, None)  # TODO: Add progress callback
         return data
 
     @check_alignment
@@ -354,7 +354,8 @@ class ESPToolModuleDirect(ESPToolModuleMain):
 
     def hard_reset(self) -> None:
         """Reset the ESP32 device using the RTS pin."""
-        self.esp.hard_reset()
+        with redirect_stdout_stderr("esptool_hard_reset"):
+            self.esp.hard_reset()
 
     def close(self) -> None:
         if self.esp:

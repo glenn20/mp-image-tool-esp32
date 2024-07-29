@@ -165,25 +165,32 @@ class Esp32Image(Firmware):
     ) -> None:
         """Check that the app partitions contain valid app image signatures."""
         f = self.file
-        for part in (
+        app_parts = [
             p for p in new_table if p.type_name == "app" and p.offset < self.size
-        ):
+        ]
+        app_parts = [self._get_part("bootloader")] + app_parts
+        for part in app_parts:
             # Check there is an app at the start of the partition
             f.seek(part.offset)
-            data = f.read(part.size if check_hash else self.BLOCKSIZE)
+            data = f.read(self.BLOCKSIZE)
             if not self._check_app_image(data, part.name):
                 log.warning(f"Partition '{part.name}': App image signature not found.")
                 continue
-            log.action(f"Partition '{part.name}' App image signature found.")
+            log.action(f"Partition '{part.name}': App image signature found.")
             if not check_hash:
                 continue
-            n, calc_sha, stored_sha = check_image_hash(data)
-            if calc_sha != stored_sha:
+            f.seek(part.offset)
+            data = f.read(part.size)
+            size, calc_sha, stored_sha = check_image_hash(data)
+            size += len(stored_sha)  # Include the stored hash in the size
+            sha, stored = calc_sha.hex(), stored_sha.hex()
+            log.debug(f"{part.name}: {size=}\n       {sha=}\n    {stored=})")
+            if sha != stored:
                 log.warning(
-                    f"Partition '{part.name}': Hash mismatch ({calc_sha=} {stored_sha=} {n=})"
+                    f"Partition '{part.name}': Hash mismatch ({size=} {sha=} {stored=})"
                 )
             else:
-                log.action(f"Partition '{part.name}' Hash confirmed.")
+                log.action(f"Partition '{part.name}': Hash confirmed ({size=}).")
 
     def check_data_partitions(self, new_table: PartitionTable) -> None:
         """Erase any data partitions in `new_table` which have been moved or resized."""

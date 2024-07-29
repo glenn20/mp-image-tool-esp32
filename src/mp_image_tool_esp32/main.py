@@ -18,12 +18,14 @@ import re
 import shutil
 import sys
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 from . import __version__, argtypes, layouts
 from . import logger as log
 from . import ota_update
 from .argparse_typed import parser as typed_parser
 from .argtypes import KB, MB, ArgList, PartList
+from .firmware_file import is_device
 from .image_file import Esp32Image
 from .partition_table import NAME_TO_TYPE, PartitionError, PartitionTable
 
@@ -82,7 +84,7 @@ usage = """
     on esp32 devices.
 
     filename            | the esp32 firmware image filename or serial device
-    -o --output FILE    | output filename
+    -o --output FILE    | output filename or device to flash firmware
     -q --quiet          | set debug level to WARNING (default: INFO)
     -d --debug          | set debug level to DEBUG (default: INFO)
     -n --no-reset       | do not reset the device after esptool.py commands
@@ -123,10 +125,25 @@ usage = """
 
     Options --erase-fs and --ota-update can only be used when operating on
     serial-attached devices (not firmware files).
+
+    If a serial device is provided to the `-o` or `--output` option, the
+    firmware (including any changes made) will be flashed to the device, eg:
+
+       `mp-image-tool-esp32 firmware.bin -o u0`
+
+    is a convenient way to flash firmware to a device.
 """
 
 
-def process_arguments() -> None:
+def expand_device_short_names(name: str) -> str:
+    """Expand short device names to full device names."""
+    name = re.sub(r"^u([0-9]+)$", r"/dev/ttyUSB\1", name)
+    name = re.sub(r"^a([0-9]+)$", r"/dev/ttyACM\1", name)
+    name = re.sub(r"^c([0-9]+)$", r"COM\1", name)
+    return name
+
+
+def run_commands() -> None:
     namespace = TypedNamespace()
     parser = typed_parser(usage, namespace)
     args = parser.parse_args(namespace=namespace)
@@ -137,10 +154,8 @@ def process_arguments() -> None:
         f"Running {progname} {__version__} (Python {platform.python_version()})."
     )
     # Use u0, a0, and c0 as aliases for /dev/ttyUSB0. /dev/ttyACM0 and COM0
-    input: str = args.filename  # the input firmware filename
-    input = re.sub(r"^u([0-9]+)$", r"/dev/ttyUSB\1", input)
-    input = re.sub(r"^a([0-9]+)$", r"/dev/ttyACM\1", input)
-    input = re.sub(r"^c([0-9]+)$", r"COM\1", input)
+    name: str = args.filename  # the input firmware filename
+    input: str = expand_device_short_names(name)
     basename: str = os.path.basename(input)
 
     # Open input (args.filename) from firmware file or esp32 device
@@ -221,17 +236,30 @@ def process_arguments() -> None:
 
     ## Write modified partition table to a new file or back to flash storage
 
-    if extension:  # A change has been made to the partition table
+    flash_device: str = ""  # If output is a device, this will be the device name
+    output_filename: str = ""  # If output is a file, this will be the filename
+    tmpfile = None
+    if extension or args.output:  # A change has been made to the partition table
         if new_table.app_part.offset != image.table.app_part.offset:
             raise PartitionError("first app partition offset has changed", new_table)
         if log.isloglevel("info"):
             layouts.print_table(new_table)
         if not image.is_device:  # If input is a firmware file, make a copy
             # Make a copy of the firmware file and open the new firmware...
-            out = args.output or re.sub(r"([.][^.]+)?$", f"{extension}\\1", basename, 1)
-            shutil.copy(input, out)
+            output_filename = args.output or re.sub(
+                r"([.][^.]+)?$", f"{extension}\\1", basename, 1
+            )
+            output_filename = expand_device_short_names(output_filename)
+            if is_device(output_filename):
+                # If the output is a device, we need to save the firmware to
+                # a temporary file before flashing it to the device.
+                flash_device = output_filename  # The device we will flash
+                tmpfile = NamedTemporaryFile("w+b", prefix="mp-image-tool-esp32-")
+                output_filename = tmpfile.name  # The temporary file for the firmware
+            shutil.copy(input, output_filename)
             image.file.close()
-            image = Esp32Image(out)
+            image = Esp32Image(output_filename)
+
         # Update the firmware with the new partition table...
         log.action(f"Writing to {image.header.chip_name} {what}: {image.filename}...")
         image.update_image(new_table, new_header)
@@ -274,7 +302,7 @@ def process_arguments() -> None:
         ota_update.ota_update(image, args.ota_update, args.no_rollback)
 
     if args.check:  # --check : Check the partition table and app images are valid
-        image.check_app_partitions(image.table)
+        image.check_app_partitions(image.table, check_hash=True)
         try:
             ota = ota_update.OTAUpdater(image)
             log.info(f"Current OTA boot partition: {ota.current().name}")
@@ -282,18 +310,30 @@ def process_arguments() -> None:
         except PartitionError:
             pass  # No OTA partitions
 
+    if flash_device and output_filename:
+        device = Esp32Image(
+            flash_device,
+            args.baud,
+            reset_on_close=not args.no_reset,
+            esptool_method=args.method,
+        )
+        device.write_firmware(image.read_firmware())
+        device.file.close()
+        if tmpfile:
+            tmpfile.close()
+
     image.file.close()
 
 
 def main() -> int:
     try:
-        process_arguments()
+        run_commands()
     except Exception as err:
         log.error(f"{type(err).__name__}: {err}")
         if isinstance(err, PartitionError) and err.table:
             err.table.print()
         if log.isloglevel("debug"):
-            raise err
+            raise err  # Re-raise the exception to get a stack trace
         return 1
     return 0
 

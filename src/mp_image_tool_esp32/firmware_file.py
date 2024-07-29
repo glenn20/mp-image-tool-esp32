@@ -9,7 +9,8 @@ from . import logger as log
 from .esptool_io import BLOCKSIZE, esptool_wrapper
 from .image_header import ImageHeader
 
-# Fields in the image bootloader header
+# Bootloader offsets for esp32 devices, indexed by chip name
+# Offset is zero for all devices except esp32 and esp32s2
 BOOTLOADER_OFFSET = defaultdict(int, esp32=0x1_000, esp32s2=0x1_000)
 
 
