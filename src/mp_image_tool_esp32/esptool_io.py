@@ -33,7 +33,7 @@ from .argtypes import KB, MB, B
 
 BAUDRATES = (115200, 230400, 460800, 921600, 1500000, 2000000, 3000000)
 
-BAUDRATE = 460800  # Default baudrate for esptool.py
+BAUDRATE = 921600  # Default baudrate for esptool.py
 
 BLOCKSIZE = B  # Block size for erasing/writing regions of the flash storage
 
@@ -179,7 +179,7 @@ class ESPTool(ABC):
     esptool_args: str
 
     @abstractmethod
-    def esptool_cmd(self, command: str) -> str:
+    def esptool_cmd(self, command: str, quiet: bool = True) -> str:
         """Execute an `esptool.py` command and return the output as a string."""
         ...
 
@@ -229,7 +229,7 @@ class ESPToolSubprocess(ESPTool):
             self.esptool_args = " ".join((self.esptool_args, "--chip", self.chip_name))
         log.debug(f"Detected {self.chip_name} with flash size {self.flash_size}.")
 
-    def esptool_cmd(self, command: str) -> str:
+    def esptool_cmd(self, command: str, quiet: bool = True) -> str:
         """Run the `esptool.py` command and return the output as a string.
         Calls the `main()` function in the `esptool` module with the command."""
         cmd = (
@@ -278,7 +278,7 @@ class ESPToolModuleMain(ESPToolSubprocess):
         super().__init__(port, baud)
         self.esptool_args = "--after no_reset"
 
-    def esptool_cmd(self, command: str) -> str:
+    def esptool_cmd(self, command: str, quiet: bool = True) -> str:
         """Run the `esptool.py` command and return the output as a string.
         Calls the `main()` function in the `esptool` module with the command."""
         cmd = f"{self.esptool_args} --baud {self.baud} --port {self.port} {command}"
@@ -333,12 +333,15 @@ class ESPToolModuleDirect(ESPToolModuleMain):
 
         args = Dictargs(
             flash_mode="keep",
+            flash_size="keep",
             compress=True,
             addr_filename=((pos, io.BytesIO(data)),),
-            flash_size=self.flash_size_str,
         )
-        with redirect_stdout_stderr("esptool_write_flash"):
+        if len(data) > 16 * KB:
             esptool.cmds.write_flash(self.esp, args)
+        else:
+            with redirect_stdout_stderr("esptool_write_flash"):
+                esptool.cmds.write_flash(self.esp, args)
         return len(data)
 
     def read_flash(self, pos: int, size: int) -> bytes:
