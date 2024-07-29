@@ -24,7 +24,7 @@ from . import logger as log
 from . import ota_update
 from .argparse_typed import parser as typed_parser
 from .argtypes import KB, MB, ArgList, PartList
-from .image_file import Esp32Image, is_device
+from .image_file import Esp32Image
 from .partition_table import NAME_TO_TYPE, PartitionError, PartitionTable
 
 
@@ -142,16 +142,17 @@ def process_arguments() -> None:
     input = re.sub(r"^a([0-9]+)$", r"/dev/ttyACM\1", input)
     input = re.sub(r"^c([0-9]+)$", r"COM\1", input)
     basename: str = os.path.basename(input)
-    what: str = "esp32 device" if is_device(input) else "image file"
 
     # Open input (args.filename) from firmware file or esp32 device
-    log.action(f"Opening {what}: {input}...")
+    log.action(f"Opening {input}...")
     image: Esp32Image = Esp32Image(
         input,
         args.baud,
         reset_on_close=not args.no_reset,
         esptool_method=args.method,
     )
+    what: str = "firmware device" if image.is_device else "firmware file"
+    log.info(f"Found {what}")
     log.info(f"Firmware Chip type: {image.chip_name}")
     log.info(f"Firmware Flash size: {image.flash_size // MB}MB")
     table: PartitionTable = copy.copy(image.table)

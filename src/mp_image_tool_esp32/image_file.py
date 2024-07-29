@@ -17,53 +17,16 @@ firmware files.
 from __future__ import annotations
 
 import hashlib
-import io
 from functools import cached_property
 
 from . import logger as log
 from .argtypes import MB
-from .espdeviceio import ESPDeviceIO
-from .image_header import BLOCKSIZE, BOOTLOADER_OFFSET, ImageHeader
+from .firmware_file import Firmware
+from .image_header import ImageHeader
 from .partition_table import BOOTLOADER_SIZE, Part, PartitionTable
 
 
-def is_device(filename: str) -> bool:
-    """Return `True` if `filename` is a serial device, else `False`."""
-    return filename.startswith("/dev/") or filename.startswith("COM")
-
-
-class FirmwareFileWithOffset(io.BufferedRandom):
-    """A class to wrap a file object and add an offset to the seek and tell.
-    On esp32 and s2, firmware files start at the bootloader offset (0x1000
-    bytes)."""
-
-    BLOCKSIZE = BLOCKSIZE
-
-    def __init__(self, name: str):
-        # Detach the raw base file from `file` and attach it to this object
-        f = open(name, "r+b")
-        hdr = ImageHeader.from_file(f)
-        self.chip_name = hdr.chip_name
-        self.flash_size = hdr.flash_size
-        self.flash_size_str = f"{hdr.flash_size//MB}MB"
-        self.bootloader = BOOTLOADER_OFFSET[hdr.chip_name]
-        self.offset = self.bootloader  # Offset to add to seek and tell
-        self.app_size = f.seek(0, 2) - PartitionTable.APP_PART_OFFSET
-        f.seek(self.bootloader)
-        super().__init__(f.detach())
-
-    def seek(self, pos: int, whence: int = 0):
-        if whence == 0:  # If seek from start of file, adjust for offset
-            pos -= self.offset  # Adjust pos for offset
-            if pos < 0:
-                raise OSError(f"Attempt to seek before offset ({self.offset:#x}).")
-        return super().seek(pos, whence) + self.offset
-
-    def tell(self) -> int:
-        return super().tell() + self.offset
-
-
-class Esp32Image:
+class Esp32Image(Firmware):
     """A class to represent an open esp32 firmware: in an open file or
     flash storage on a serial-attached device. Includes a `File` object to read
     and write to the device or file. `esptool.py` is used to read and write to
@@ -80,23 +43,14 @@ class Esp32Image:
         esptool_method: str = "",
         reset_on_close: bool = True,
     ) -> None:
-        self.file = (
-            ESPDeviceIO(
-                filename,
-                baud,
-                reset_on_close=reset_on_close,
-                esptool_method=esptool_method,
-            )
-            if is_device(filename)
-            else FirmwareFileWithOffset(filename)
+        super().__init__(
+            filename,
+            baud,
+            esptool_method=esptool_method,
+            reset_on_close=reset_on_close,
         )
-        self.filename = filename
-        self.chip_name = self.file.chip_name
-        self.flash_size = self.file.flash_size
-        self.app_size = self.file.app_size
-        self.bootloader = self.file.bootloader
-        self.BLOCKSIZE = BLOCKSIZE
-        self.is_device = is_device(filename)
+        self.app_size = 0  # TODO: Calculate this correctly
+        self.app_part_size = 0  # TODO: Calculate this correctly
 
     @cached_property
     def size(self) -> int:
@@ -155,10 +109,7 @@ class Esp32Image:
         f = self.file
         f.seek(part.offset)
         size = min(size, part.size) if size else part.size
-        if isinstance(f, ESPDeviceIO):
-            f.erase(size)  # Bypass write() to erase the flash
-        else:
-            f.write(b"\xff" * size)
+        f.erase(size)  # Bypass write() to erase the flash
 
     def read_part(self, part: Part | str) -> bytes:
         """Return the contents of the `part` partition from `image` as `bytes"""
@@ -189,10 +140,7 @@ class Esp32Image:
             raise ValueError(f"Failed to write {len(data)} bytes to '{part.name}'.")
         if n < part.size:
             log.action("Erasing remainder of partition...")
-            if isinstance(f, ESPDeviceIO):
-                f.erase(part.size - n)  # Bypass write() to erase the flash
-            else:
-                f.write(b"\xff" * (part.size - n))
+            f.erase(part.size - n)  # Bypass write() to erase the flash
         return n - pad
 
     def check_app_partitions(self, new_table: PartitionTable) -> None:

@@ -51,7 +51,8 @@ def isloglevel(level: str) -> bool:
 
 
 def _dolog(level: int, msg: str, *args: Any, **kwargs: Any) -> None:
-    logger.log(level, colour(msg, level), *args, **kwargs)
+    if msg:
+        logger.log(level, colour(msg, level), *args, **kwargs)
 
 
 def debug(msg: str, *args: Any, **kwargs: Any) -> None:

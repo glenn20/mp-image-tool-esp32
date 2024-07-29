@@ -16,10 +16,11 @@ import io
 import re
 import shlex
 import sys
+from abc import ABC, abstractmethod
 from contextlib import contextmanager
 from subprocess import PIPE, CalledProcessError, Popen
 from tempfile import NamedTemporaryFile
-from typing import IO, Any, Callable, Generator, Protocol, Sequence
+from typing import IO, Any, Callable, Dict, Generator, Sequence
 
 import esptool
 import esptool.cmds
@@ -28,14 +29,13 @@ import tqdm
 from colorama import Fore
 
 from . import logger as log
-from .argtypes import KB, MB
-from .image_header import BLOCKSIZE
+from .argtypes import KB, MB, B
 
 BAUDRATES = (115200, 230400, 460800, 921600, 1500000, 2000000, 3000000)
 
-
 BAUDRATE = 460800  # Default baudrate for esptool.py
 
+BLOCKSIZE = B  # Block size for erasing/writing regions of the flash storage
 
 tqdm_args: dict[str, Any] = {
     "ascii": " =",
@@ -81,13 +81,12 @@ def esptool_progress_bar(stdout: IO[str], size: int) -> str:
 
 def set_baudrate(baud: int) -> int:
     """Set the baudrate for `esptool.py` to the highest value <= `baud`."""
-    global baudrate
-    baudrate = max(filter(lambda x: x <= baud, BAUDRATES))
-    return baudrate
+    return max(filter(lambda x: x <= baud, BAUDRATES))
 
 
 # A context manager to redirect stdout and stderr to a buffer
 # Will print stderr to stdout if an error occurs
+# This is used to wrap calls to esptool module functions directly
 @contextmanager
 def redirect_stdout_stderr(
     name: str = "esptool",
@@ -109,29 +108,14 @@ def redirect_stdout_stderr(
 
     if err:
         log.error(f"Error: {name} raises {type(err).__name__}")
-        if stderr:
-            log.error(stderr)
-        if output:
-            log.error(output)
+        log.warning(stderr)
+        log.warning(output)
         raise err
     else:
         log.debug(output)
 
 
-def check_alignment(func: Callable[..., Any]) -> Callable[..., Any]:
-    def inner(self: Any, *args: Sequence[Any]) -> Callable[..., Any]:
-        for arg in args:
-            if isinstance(arg, int):
-                if arg % BLOCKSIZE:
-                    raise ValueError(
-                        f"{func.__name__}: {arg:#x} is not aligned to "
-                        f"blocksize ({BLOCKSIZE:#x} bytes)."
-                    )
-        return func(self, *args)
-
-    return inner
-
-
+# This is used to run esptool.py commands in a subprocess
 def esptool_subprocess(command: str, size: int = 0) -> str:
     """Run the `esptool.py` command and return the output as a string.
     A tqdm progress bar is shown for read/write greater than 16KB.
@@ -166,52 +150,70 @@ def esptool_subprocess(command: str, size: int = 0) -> str:
     return output
 
 
-class ESPTool(Protocol):
+def check_alignment(func: Callable[..., Any]) -> Callable[..., Any]:
+    def inner(self: Any, *args: Sequence[Any]) -> Callable[..., Any]:
+        for arg in args:
+            if isinstance(arg, int):
+                if arg % BLOCKSIZE:
+                    raise ValueError(
+                        f"{func.__name__}: {arg:#x} is not aligned to "
+                        f"blocksize ({BLOCKSIZE:#x} bytes)."
+                    )
+        return func(self, *args)
+
+    return inner
+
+
+class ESPTool(ABC):
     """Protocol for classes which provide an interface to an ESP32 device
     using `esptool.py`. The protocol defines the methods required to configure,
     read and write data to the device.
     """
 
+    name: str
     port: str
     baud: int
     chip_name: str
     flash_size: int
     flash_size_str: str
+    esptool_args: str
 
+    @abstractmethod
     def esptool_cmd(self, command: str) -> str:
         """Execute an `esptool.py` command and return the output as a string."""
         ...
 
+    @abstractmethod
     def write_flash(self, pos: int, data: bytes) -> int:
         """Write `data` to the device flash storage at position `pos`."""
         ...
 
+    @abstractmethod
     def read_flash(self, pos: int, size: int) -> bytes:
         """Read `size` bytes from the device flash storage at position `pos`."""
         ...
 
+    @abstractmethod
     def erase_flash(self, pos: int, size: int) -> None:
         """Erase a region of the device flash storage starting at `pos`."""
         ...
 
+    @abstractmethod
     def hard_reset(self) -> None:
         """Perform a hard reset of the device using the RTS pin."""
         ...
 
+    @abstractmethod
     def close(self) -> None:
         """Close the connection to the device."""
         ...
 
 
-class ESPToolSubprocess:
-    # These arguments are necessary for esptool.py to connect to the device
-    # These prevent esptool.main() from resetting the device on finish
-    port: str
-    baud: int
-    chip_name: str
-    flash_size_str: str
-    flash_size: int
-    esptool_args: str = ""
+class ESPToolSubprocess(ESPTool):
+    """An ESPTool class which runs esptool commands in a `esptool.py`
+    subprocess."""
+
+    name = "subprocess"
 
     def __init__(self, port: str, baud: int = 0):
         self.port = port
@@ -264,6 +266,10 @@ class ESPToolSubprocess:
 
 
 class ESPToolModuleMain(ESPToolSubprocess):
+    """An ESPTool class which calls `esptool.main()` from the esptool module."""
+
+    name = "command"
+
     def __init__(self, port: str, baud: int = 0):
         """Connect to the ESP32 device on the specified serial `port`.
         Returns a tuple of the `esp` object, `chip_name` and `flash_size`.
@@ -291,6 +297,8 @@ class ESPToolModuleDirect(ESPToolModuleMain):
     Calls `esptool.main()` on initialisation to ensure the connection to the
     device is correctly initialised.
     """
+
+    name = "direct"
 
     def __init__(self, port: str, baud: int = 0):
         """Connect to the ESP32 device on the specified serial `port`."""
@@ -320,10 +328,11 @@ class ESPToolModuleDirect(ESPToolModuleMain):
         # class to mockup the required arguments for `write_flash()`
         # Unfortunately esptool doesn't provide a lower-level API for writing
         # the flash that takes care of all the initialisation needed.
-        class Dictargs(dict[str, Any]):
+        class Dictargs(Dict[str, Any]):
             __getattr__: Callable[[str], Any] = dict.get  # type: ignore
 
         args = Dictargs(
+            flash_mode="keep",
             compress=True,
             addr_filename=((pos, io.BytesIO(data)),),
             flash_size=self.flash_size_str,
@@ -349,10 +358,10 @@ class ESPToolModuleDirect(ESPToolModuleMain):
             self.esp._port.close()  # type: ignore - esptool does not close the port
 
 
+methods = (ESPToolSubprocess, ESPToolModuleMain, ESPToolModuleDirect)
+
 esptool_methods: dict[str, type[ESPToolSubprocess]] = {
-    "subprocess": ESPToolSubprocess,
-    "command": ESPToolModuleMain,
-    "direct": ESPToolModuleDirect,
+    method.name: method for method in methods
 }
 
 

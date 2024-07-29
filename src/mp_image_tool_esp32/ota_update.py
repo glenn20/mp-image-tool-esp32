@@ -18,6 +18,7 @@ import binascii
 import struct
 from enum import IntEnum
 from functools import cached_property
+from pathlib import Path
 from typing import List
 
 from . import logger as log
@@ -156,7 +157,7 @@ def ota_update(image: Esp32Image, firmware: str, no_rollback: bool = False) -> N
 
     new_part = ota.get_next_update()  # Get the next available OTA update partition
     log.action(f"Writing firmware to OTA partition {new_part.name}...")
-    image.write_part_from_file(new_part, firmware)
+    image.write_part(new_part, Path(firmware).read_bytes())
 
     log.action("Updating otadata partition...")
     ota.set_boot(new_part)
