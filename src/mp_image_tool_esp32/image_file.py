@@ -63,9 +63,7 @@ class Esp32Image(Firmware):
         fin = self.file
         fin.seek(PartitionTable.PART_TABLE_OFFSET)
         data = fin.read(PartitionTable.PART_TABLE_SIZE)
-        table = PartitionTable.from_bytes(
-            data, self.header.flash_size, self.header.chip_name
-        )
+        table = PartitionTable.from_bytes(data, self.header.flash_size)
         table.app_size = self.app_size
         return table
 

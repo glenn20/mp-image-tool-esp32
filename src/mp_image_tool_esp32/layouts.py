@@ -59,6 +59,8 @@ def get_subtype(name: str, subtype: str) -> str:
     return subtype or default_subtype.get(name, name)
 
 
+# PartList is a list of tuples which specify a Partition:
+#   (name, subtype, offset, size)
 def new_table(
     table: PartitionTable,
     table_layout: PartList,
@@ -79,7 +81,7 @@ def ota_layout(
     """Build a layout string for a new OTA-enabled partition table, given
     `flash_size` and `app_part_size`. If `app_part_size` is 0, use the
     recommended size for the flash size."""
-    flash_size = table.flash_size
+    flash_size = table.max_size
     if not app_part_size:
         app_part_size = ota_part_size(flash_size)
     nvs_part_size = table.app_part.offset - table.FIRST_PART_OFFSET - table.OTADATA_SIZE
@@ -109,7 +111,7 @@ def print_table(table: PartitionTable) -> None:
     print(log.CYAN, end="")
     print(
         "{c}Partition table (flash size: {r}{size}MB{c}):".format(
-            size=table.flash_size // MB, **colors
+            size=table.max_size // MB, **colors
         )
     )
     print(table.print())

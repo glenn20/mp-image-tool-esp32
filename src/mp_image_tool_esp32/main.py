@@ -186,7 +186,7 @@ def run_commands() -> None:
 
     if args.flash_size:  # -f --flash-size SIZE : Set size of the flash storage
         if args.flash_size != image.header.flash_size:
-            new_table.flash_size = args.flash_size
+            new_table.max_size = args.flash_size
             new_header.flash_size = args.flash_size
             assert new_header.ismodified(), "Image header not modified!"
         extension += f"-{args.flash_size // MB}MB"

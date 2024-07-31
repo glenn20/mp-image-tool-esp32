@@ -132,6 +132,9 @@ class Part(PartTuple):
 class PartitionTable(List[Part]):
     """A class to hold a list of partitions (`Part`) in a partition table."""
 
+    max_size: int
+    app_size: int
+
     # Copy the default flash layout values
     BOOTLOADER_SIZE = BOOTLOADER_SIZE
     PART_TABLE_OFFSET = PART_TABLE_OFFSET
@@ -140,9 +143,8 @@ class PartitionTable(List[Part]):
     APP_PART_OFFSET = APP_PART_OFFSET
     OTADATA_SIZE = OTADATA_SIZE
 
-    def __init__(self, flash_size: int = 0, chip_name: str = "") -> None:
-        self.flash_size = flash_size
-        self.chip_name = chip_name
+    def __init__(self, max_size: int = 0) -> None:
+        self.max_size = max_size
         self.app_size = 0
 
     def find(self, name: str) -> Part | None:
@@ -178,12 +180,10 @@ class PartitionTable(List[Part]):
         return _make_table(format, header, data)
 
     @staticmethod
-    def from_bytes(
-        data: bytes, flash_size: int = 0, chip_name: str = ""
-    ) -> PartitionTable:
+    def from_bytes(data: bytes, max_size: int = 0) -> PartitionTable:
         """Build the partition table from the records in `data` where `data`
         is a partition table from an ESP32 firmware file or device."""
-        table = PartitionTable(flash_size, chip_name)
+        table = PartitionTable(max_size)
         parts = takewhile(
             Part.is_valid,
             (
@@ -213,8 +213,8 @@ class PartitionTable(List[Part]):
                 "Partition table does not end with an empty row.", table
             )
         table.sort(key=lambda p: p.offset)
-        if not table.flash_size:  # Infer flash size from partition table
-            table.flash_size = table[-1].offset + table[-1].size
+        if not table.max_size:  # Infer flash size from partition table
+            table.max_size = table[-1].offset + table[-1].size
         table.check()
         return table
 
@@ -240,6 +240,10 @@ class PartitionTable(List[Part]):
         if not part:
             raise PartitionError("No app partition found in table.", self)
         return part
+
+    def next_part_offset(self) -> int:
+        """Return the offset of the next available free space in flash storage."""
+        return max([p.offset + p.size for p in self] + [self.FIRST_PART_OFFSET])
 
     def add_part(
         self,
@@ -267,12 +271,12 @@ class PartitionTable(List[Part]):
         """
         if any(p for p in self if p.name == name):
             raise PartitionError(f"Partition '{name}' already exists in table.")
-        offset = max([p.offset + p.size for p in self] + [self.FIRST_PART_OFFSET])
-        if offset + size > self.flash_size:
+        offset = offset or self.next_part_offset()
+        if offset + size > self.max_size:
             raise PartitionError(
                 f"No room on flash for partition {name} ({size:#x} bytes).", self
             )
-        size = size or (self.flash_size - offset)
+        size = size or (self.max_size - offset)
         type, subtype = SUBTYPES[subtype_name]
         label = name.encode().ljust(PART_NAME_LEN, b"\x00")
         self.append(Part(PART_MAGIC, type, subtype, offset, size, label, flags))
@@ -286,19 +290,19 @@ class PartitionTable(List[Part]):
         i = self.index(self.by_name(name))
         i = [p.name for p in self].index(name)
         if new_size == 0:  # Expand to fill available space
-            upper_limit = self[i + 1].offset if i + 1 < len(self) else self.flash_size
+            upper_limit = self[i + 1].offset if i + 1 < len(self) else self.max_size
             new_size = upper_limit - self[i].offset
         self[i] = self[i]._replace(size=new_size)
         for j in range(i + 1, len(self)):
             offset = self[j - 1].offset + self[j - 1].size
             if offset > self[j].offset:  # Shift other partitions to make room
                 self[j] = self[j]._replace(offset=offset)
-            if self.flash_size < self[j].offset + self[j].size:
+            if self.max_size < self[j].offset + self[j].size:
                 # Shrink other partitions if they overflow the flash storage
-                self[j] = self[j]._replace(size=self.flash_size - self[j].offset)
+                self[j] = self[j]._replace(size=self.max_size - self[j].offset)
         return new_size
 
-    def check(self) -> None:
+    def check(self, app_size: int = 0) -> None:
         """Check the partition table for consistency.
         Raises `PartError` if any inconsistencies found."""
         offset = self.FIRST_PART_OFFSET
@@ -332,25 +336,25 @@ class PartitionTable(List[Part]):
                     self,
                 )
             offset = p.offset + p.size
-        if offset > self.flash_size:
+        if offset > self.max_size:
             raise PartitionError(
                 f"End of last partition ({offset:#x})"
-                f" is greater than flash size ({self.flash_size:#x}).",
+                f" is greater than flash size ({self.max_size:#x}).",
                 self,
             )
-        if offset != self.flash_size:
+        if offset != self.max_size:
             log.warning(
                 f"Warning: End of last partition ({offset:#x})"
-                f" < flash size ({self.flash_size:#x})."
+                f" < flash size ({self.max_size:#x})."
             )
         if self.app_part.offset != self.APP_PART_OFFSET:
             log.warning(
                 f"Warning: First app at offset={self.app_part.offset:#x}"
                 f" (expected {self.APP_PART_OFFSET:#x})."
             )
-        if self.app_size and self.app_part.size < self.app_size:
+        if app_size and self.app_part.size < app_size:
             raise PartitionError(
                 f'App partition "{self.app_part.name}"'
-                f" is too small for micropython app ({self.app_size:#x} bytes).",
+                f" is too small for micropython app ({app_size:#x} bytes).",
                 self,
             )
