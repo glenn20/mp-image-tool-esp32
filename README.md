@@ -1,4 +1,4 @@
-# mp-image-tool-esp32
+# mp-image-tool-esp32: Working with esp32 firmware files and devices
 
 Tool for manipulating partition tables in MicroPython esp32 firmware image files
 and device flash storage.
@@ -44,7 +44,7 @@ Micropython app fills 78.8% of factory partition (421 kB free)
   - `--table ota` : install an OTA-enabled partition table
   - `--table default` : install the default micropython table (non-OTA)
   - `--table nvs=6B,phy_init=1B,factory=0x1f0B,vfs=0` : specify a table layout
-  - `--resize factory=0x2M,vfs=0x400K` : resize any partition (adjust other
+  - `--resize factory=2M,vfs=0x400K` : resize any partition (adjust other
     parts to fit)
   - `--delete phy_init --resize nvs=0` : delete 'phy_init' and expand 'nvs' to
     use free space
@@ -92,6 +92,33 @@ mount what appears to be a corrupt filesystem or nvs partition.
 `mp-image-tool-esp32` uses the
 [`esptool.py`](https://github.com/espressif/esptool) program to perform the
 operations on attached esp32 devices.
+
+- Select the specific method used to perform operations on the device:
+  - `--method direct/command/subprocess`
+    - `subprocess`: Run the "esptool.py" command in a subprocess to interact
+      with the device.
+    - `command`: Run the esptool commands in this process using the
+      **esptool.main()** function from the esptool module.
+    - `direct`: (default): Use lower level functions from the **esptool** module to
+      perform operations on the device. This is more efficient as it skips
+      repeated initialisation and querying of the device.
+
+    Versions prior to 0.0.5, used the `subprocess` method.
+
+### Flash firmware to an esp32 device
+
+If a serial device is provided to the `-o` or `--output` option, the
+firmware (including any changes made) will be flashed to the device, eg any of
+the following commands will re-flash your device with a new firmware:
+
+```bash
+mp-image-tool-esp32 firmware.bin -o u0
+mp-image-tool-esp32 firmware.bin -f 8M --table ota -o u0
+```
+
+is a convenient way to flash firmware to a device. `mp-image-tool-esp32` will
+automatically use the right `esptool` options to flash the firmware for your
+device (you don't need to remember if you should write to offset `0x0` or `0x1000`)
 
 ## Installation
 
@@ -314,11 +341,12 @@ OTA-enabled devices include those which:
 
 **CAUTION:** If you update the firmware with `--ota-update` and **OTA rollback**
 is enabled, the device will automatically reset into the new firmware on
-completion. If you then connect to the device over the serial port, the device
-will usually reset again. If your startup files have **not** marked the firmware
-as `valid`, your device will have **rolled back** to the previous firmware.
+completion. If you then connect to the device over the serial port, your IDE or
+terminal software may reset the device again. If your startup files have **not**
+marked the firmware as `valid`, your device will have **rolled back to the
+previous firmware** before you get to work with it.
 
-You can stop the **rollback** by marking the new firmware as **valid** with:
+You *can* stop the **rollback** by marking the new firmware as **valid** with:
 
 - `esp32.Partition.mark_app_valid_cancel_rollback()` ([docs](
   https://docs.micropython.org/en/latest/library/esp32.html#esp32.Partition.mark_app_valid_cancel_rollback)) or
@@ -364,8 +392,9 @@ mp-image-tool-esp32 --write factory=ESP32_GENERIC-20231005-v1.21.0.app-bin
 ## Usage
 
 ```text
-usage: mp-image-tool-esp32 [-h] [-o OUTPUT] [-q] [-d] [-x] [-f SIZE] [-a SIZE]
-                           [--no-rollback] [--ota-update FILE] [--from-csv FILE]
+usage: mp-image-tool-esp32 [-h] [-o FILE] [-q] [-d] [-n] [-x] [-f SIZE] [-a SIZE] [-m METHOD]
+                           [--check-app] [--no-rollback] [--baud RATE] [--ota-update FILE]
+                           [--from-csv FILE]
                            [--table ota/default/NAME1=SUBTYPE:SIZE[,NAME2,...]]
                            [--delete NAME1[,NAME2]]
                            [--add NAME1:SUBTYPE:OFFSET:SIZE[,NAME2,...]]
@@ -382,45 +411,57 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
-  -o OUTPUT, --output OUTPUT
-                        output filename
-  -q, --quiet           mute program output
-  -d, --debug           print additional info
-  -n, --no-reset        do not reset the device after esptool.py commands
+  -o FILE, --output FILE
+                        output filename or device to flash firmware
+  -q, --quiet           set debug level to WARNING (default: INFO)
+  -d, --debug           set debug level to DEBUG (default: INFO)
+  -n, --no-reset        leave device in bootloader mode afterward
   -x, --extract-app     extract .app-bin from firmware
   -f SIZE, --flash-size SIZE
                         size of flash for new partition table
   -a SIZE, --app-size SIZE
                         size of factory and ota app partitions
-  --check               check app partitions and OTA config are valid
-  --no-rollback         disable ota rollback on firmware update with --ota Use this if
-                        bootloader or app don't support rollback.
+  -m METHOD, --method METHOD
+                        esptool method: subprocess, command or direct (default)
+  --check-app           check app partitions and OTA config are valid
+  --no-rollback         disable app rollback after OTA update
   --baud RATE           baud rate for serial port (default: 460800)
-  --ota-update FILE     perform an OTA firmware updgrade over the serial port
+  --ota-update FILE     perform an OTA firmware upgrade over the serial port
   --from-csv FILE       load new partition table from CSV file
   --table ota/default/NAME1=SUBTYPE:SIZE[,NAME2,...]
-                        create new partition table, eg: "--table ota" (install an OTA-
-                        enabled partition table), "--table default" (default (non-OTA)
-                        partition table), "--table nvs=7B,factory=2M,vfs=0". SUBTYPE is
-                        optional in most cases (inferred from name).
+                        create new partition table, eg: "--table ota" (install an OTA-enabled
+                        partition table), "--table default" (default (non-OTA) partition
+                        table), "--table nvs=7B,factory=2M,vfs=0". SUBTYPE is optional in most
+                        cases (inferred from name).
   --delete NAME1[,NAME2]
                         delete the named partitions
   --add NAME1:SUBTYPE:OFFSET:SIZE[,NAME2,...]
                         add new partitions to table
   --resize NAME1=SIZE1[,NAME2=SIZE2]
-                        resize partitions eg. --resize factory=2M,nvs=5B,vfs=0. If SIZE is
-                        0, expand partition to available space
+                        resize partitions eg. --resize factory=2M,nvs=5B,vfs=0. If SIZE is 0,
+                        expand partition to available space
   --erase NAME1[,NAME2]
-                        erase the named partitions on device flash storage
+                        erase the named partitions
   --erase-fs NAME1[,NAME2]
-                        erase first 4 blocks of a partition on flash storage. Micropython
-                        will initialise filesystem on next boot.
+                        erase first 4 blocks of a partition on flash storage. Micropython will
+                        initialise filesystem on next boot.
   --read NAME1=FILE1[,NAME2=FILE2,bootloader=FILE,...]
-                        copy partition contents to file(s)
+                        copy partition contents (or bootloader) to file.
   --write NAME1=FILE1[,NAME2=FILE2,bootloader=FILE,...]
-                        write file(s) contents into partitions on the device flash storage.
+                        write file(s) contents into partitions (or bootloader) in the
+                        firmware.
 
 Where SIZE is a decimal or hex number with an optional suffix (M=megabytes, K=kilobytes,
-B=blocks (0x1000=4096 bytes)). Options --erase, --erase-fs, --read, --write and --bootloader
-can only be used when operating on serial-attached devices (not firmware files).
+B=blocks (0x1000=4096 bytes)).
+
+Options --erase-fs and --ota-update can only be used when operating on serial-attached devices
+(not firmware files).
+
+If a serial device is provided to the `-o` or `--output` option, the firmware (including any
+changes made) will be flashed to the device, eg:
+
+    `mp-image-tool-esp32 firmware.bin -o u0`
+
+is a convenient way to flash firmware to a device.
+
 ```
