@@ -51,7 +51,7 @@ class TypedNamespace(argparse.Namespace):
     quiet: bool
     debug: bool
     no_reset: bool
-    check: bool
+    check_app: bool
     extract_app: bool
     flash_size: int
     app_size: int
@@ -87,12 +87,12 @@ usage = """
     -o --output FILE    | output filename or device to flash firmware
     -q --quiet          | set debug level to WARNING (default: INFO)
     -d --debug          | set debug level to DEBUG (default: INFO)
-    -n --no-reset       | do not reset the device after esptool.py commands
+    -n --no-reset       | leave device in bootloader mode afterward
     -x --extract-app    | extract .app-bin from firmware
     -f --flash-size SIZE| size of flash for new partition table
     -a --app-size SIZE  | size of factory and ota app partitions
     -m --method METHOD  | esptool method: subprocess, command or direct (default)
-    --check             | check app partitions and OTA config are valid
+    --check-app         | check app partitions and OTA config are valid
     --no-rollback       | disable app rollback after OTA update
     --baud RATE         | baud rate for serial port (default: 460800)
     --ota-update FILE   | perform an OTA firmware upgrade over the serial port
@@ -301,7 +301,7 @@ def run_commands() -> None:
         log.action(f"Performing OTA firmware upgrade from '{args.ota_update}'...")
         ota_update.ota_update(image, args.ota_update, args.no_rollback)
 
-    if args.check:  # --check : Check the partition table and app images are valid
+    if args.check_app:  # --check-app : Check the partition table and app images
         image.check_app_partitions(image.table, check_hash=True)
         try:
             ota = ota_update.OTAUpdater(image)
