@@ -18,14 +18,12 @@ import re
 import shutil
 import sys
 from pathlib import Path
-from tempfile import NamedTemporaryFile
 
 from . import __version__, argtypes, layouts
 from . import logger as log
 from . import ota_update
 from .argparse_typed import parser as typed_parser
 from .argtypes import MB, ArgList, PartList
-from .firmware_file import is_device
 from .image_file import Esp32Image
 from .partition_table import NAME_TO_TYPE, PartitionError, PartitionTable
 
@@ -68,6 +66,7 @@ class TypedNamespace(argparse.Namespace):
     erase_fs: ArgList
     read: ArgList
     write: ArgList
+    flash: str
     _type_conversions = {  # Map types to funcs which return type from a string arg.
         int: argtypes.numeric_arg,  # Convert str to an integer.
         PartList: argtypes.partlist,  # Convert str to a list of Part tuples.
@@ -83,8 +82,8 @@ usage = """
     Tool for manipulating MicroPython esp32 firmware files and flash storage
     on esp32 devices.
 
-    filename            | the esp32 firmware image filename or serial device
-    -o --output FILE    | output filename or device to flash firmware
+    filename            | the esp32 firmware filename or serial device
+    -o --output FILE    | output firmware filename (auto-generated if not given)
     -q --quiet          | set debug level to WARNING (default: INFO)
     -d --debug          | set debug level to DEBUG (default: INFO)
     -n --no-reset       | leave device in bootloader mode afterward
@@ -119,6 +118,7 @@ usage = """
     --write NAME1=FILE1[,NAME2=FILE2,bootloader=FILE,...] \
                         | write file(s) contents into partitions \
                             (or bootloader) in the firmware.
+    --flash DEVICE      | flash new firmware to the serial-attached device.
 
     Where SIZE is a decimal or hex number with an optional suffix (M=megabytes,
     K=kilobytes, B=blocks (0x1000=4096 bytes)).
@@ -126,10 +126,10 @@ usage = """
     Options --erase-fs and --ota-update can only be used when operating on
     serial-attached devices (not firmware files).
 
-    If a serial device is provided to the `-o` or `--output` option, the
-    firmware (including any changes made) will be flashed to the device, eg:
+    If the --flash options is provided, the firmware (including any changes
+    made) will be flashed to the device, eg:
 
-       `mp-image-tool-esp32 firmware.bin -o u0`
+       `mp-image-tool-esp32 firmware.bin --flash u0`
 
     is a convenient way to flash firmware to a device.
 """
@@ -153,12 +153,13 @@ def run_commands() -> None:
     log.action(
         f"Running {progname} {__version__} (Python {platform.python_version()})."
     )
+
+    ## Open the firmware file or esp32 device
+
     # Use u0, a0, and c0 as aliases for /dev/ttyUSB0. /dev/ttyACM0 and COM0
     name: str = args.filename  # the input firmware filename
     input: str = expand_device_short_names(name)
     basename: str = os.path.basename(input)
-
-    # Open input (args.filename) from firmware file or esp32 device
     log.action(f"Opening {input}...")
     image: Esp32Image = Esp32Image(
         input,
@@ -166,9 +167,10 @@ def run_commands() -> None:
         reset_on_close=not args.no_reset,
         esptool_method=args.method,
     )
-    what: str = "device" if image.is_device else "firmware file"
+    input_type: str = "device" if image.is_device else "firmware file"
     log.info(
-        f"Found {image.header.chip_name} {what} ({image.header.flash_size // MB}MB flash)."
+        f"Found {image.header.chip_name} {input_type} "
+        f"({image.header.flash_size // MB}MB flash)."
     )
     app_size = 0
     if not image.is_device:
@@ -176,6 +178,8 @@ def run_commands() -> None:
         image.file.seek(image.bootloader)
     if log.isloglevel("info"):
         layouts.print_table(image.table, app_size)
+
+    ## Process requested changes to the firmware file (esp. partition table)
 
     # Make a copy of the partition table and image header for modification
     new_table: PartitionTable = copy.copy(image.table)
@@ -239,9 +243,6 @@ def run_commands() -> None:
 
     ## Write modified partition table to a new file or back to flash storage
 
-    flash_device: str = ""  # If output is a device, this will be the device name
-    output_filename: str = ""  # If output is a file, this will be the filename
-    tmpfile = None
     if extension or args.output:  # A change has been made to the partition table
         if new_table.app_part.offset != image.table.app_part.offset:
             raise PartitionError("first app partition offset has changed", new_table)
@@ -252,19 +253,14 @@ def run_commands() -> None:
             output_filename = args.output or re.sub(
                 r"([.][^.]+)?$", f"{extension}\\1", basename, 1
             )
-            output_filename = expand_device_short_names(output_filename)
-            if is_device(output_filename):
-                # If the output is a device, we need to save the firmware to
-                # a temporary file before flashing it to the device.
-                flash_device = output_filename  # The device we will flash
-                tmpfile = NamedTemporaryFile("w+b", prefix="mp-image-tool-esp32-")
-                output_filename = tmpfile.name  # The temporary file for the firmware
             shutil.copy(input, output_filename)
             image.file.close()
             image = Esp32Image(output_filename)
 
         # Update the firmware with the new partition table...
-        log.action(f"Writing to {image.header.chip_name} {what}: {image.filename}...")
+        log.action(
+            f"Writing to {image.header.chip_name} {input_type}: {image.filename}..."
+        )
         image.update_image(new_table, new_header)
 
     ## For erasing/reading/writing flash storage partitions
@@ -313,17 +309,22 @@ def run_commands() -> None:
         except PartitionError:
             pass  # No OTA partitions
 
-    if flash_device and output_filename:
-        device = Esp32Image(
-            flash_device,
-            args.baud,
-            reset_on_close=not args.no_reset,
-            esptool_method=args.method,
-        )
-        device.write_firmware(image.read_firmware())
-        device.file.close()
-        if tmpfile:
-            tmpfile.close()
+    if args.flash:  # --flash DEVICE : Flash firmware to the device
+        filename = expand_device_short_names(args.flash)
+        image2 = None
+        try:
+            image2 = Esp32Image(
+                filename,
+                args.baud,
+                reset_on_close=not args.no_reset,
+                esptool_method=args.method,
+            )
+            if not image2.is_device:
+                raise ValueError("Flashing requires a device, not a firmware file.")
+            image2.write_firmware(image)
+        finally:
+            if image2:
+                image2.file.close()
 
     image.file.close()
 

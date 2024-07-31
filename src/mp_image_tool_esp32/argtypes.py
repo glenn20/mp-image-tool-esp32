@@ -70,7 +70,7 @@ def partlist(arg: str) -> PartList:
     """Split a command line argument into a list of tuples describing a
     Partition: `[(name, subtype_name, offset, size),...]`.
 
-    The string is delimited first by "," and then by "=", ":" or "-". Offset,
+    The string is delimited first by "," and then by "=", or ":". Offset,
     subtype_name and size may be omitted (in that order).
 
     Eg: `"factory=factory:7B:2M,vfs=1M"` -> `[("factory", "factory", 0x7000,

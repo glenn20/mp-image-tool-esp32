@@ -60,7 +60,7 @@ def get_subtype(name: str, subtype: str) -> str:
 
 
 # PartList is a list of tuples which specify a Partition:
-#   (name, subtype, offset, size)
+#   [(name, subtype, offset, size), ...]
 def new_table(
     table: PartitionTable,
     table_layout: PartList,

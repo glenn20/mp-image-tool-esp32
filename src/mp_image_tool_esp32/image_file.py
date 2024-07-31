@@ -141,15 +141,27 @@ class Esp32Image(Firmware):
         return n - pad
 
     def read_firmware(self) -> bytes:
-        """Return the contents of the `part` partition from `image` as `bytes"""
+        """Return the entire firmware from this image as `bytes"""
         f = self.file
         f.seek(self.bootloader)
         return f.read()
 
-    def write_firmware(self, data: bytes) -> int:
-        """Write contents of `data` into the `part` partition in `image`."""
+    def write_firmware(self, image: Esp32Image) -> int:
+        """Write firmware from `image` into this image."""
+        src, dst = image.header, self.header
+        if src.chip_name != dst.chip_name:
+            raise ValueError(
+                f"Destination chip type ({dst.chip_name}) is different from "
+                f"source chip type ({src.chip_name})."
+            )
+        if src.flash_size != dst.flash_size:
+            log.warning(
+                f"Destination flash size ({dst.flash_size}) is different from "
+                f"source flash_size ({src.flash_size})."
+            )
         f = self.file
         f.seek(self.bootloader)
+        data = image.read_firmware()
         size = f.write(bytes(data))
         if size < len(data):
             raise ValueError(f"Failed to write {len(data)} bytes to '{self.filename}'.")

@@ -64,6 +64,12 @@ Micropython app fills 78.8% of factory partition (421 kB free)
   - `--write bootloader=bootloader.bin` : load a new bootloader from file
   - `--erase nvs,otadata` : erase partitions
 
+When operating on micropython firmware files, `mp-image-tool-esp32` will create
+a copy of the firmware file with the partition table and partition contents
+modified according to the options provided. The original firmware file is not
+modified in any way. If no modification options are given, it will print the
+partition table of `filename`.
+
 ### Operations on serial-attached esp32 devices
 
 Use `mp-image-tool-esp32 u0` to operate on the esp32 device attached to
@@ -76,12 +82,13 @@ following additional commands are available:
 - Use the `OTA` mechanism to perform a micropython firmware update over the
   serial interface to the device:
   - `--ota-update micropython.app-bin`
+- Flash a firmware (including any changes) to an esp32 device, eg:
+  - `mp-image-tool-esp32 firmware.bin --flash u0` or
+  - `mp-image-tool-esp32 firmware.bin -f 8M --table ota --flash /dev/ttyACM1`
 
-When operating on micropython firmware files, `mp-image-tool-esp32` will create
-a copy of the firmware file with the partition table and partition contents
-modified according to the options provided. The original firmware file is not
-modified in any way. If no modification options are given, it will print the
-partition table of `filename`.
+  `mp-image-tool-esp32` will automatically use the right `esptool` options to
+  flash the firmware for your device (you don't need to remember if you should
+  write to offset `0x0` or `0x1000`)
 
 When operating on serial-attached esp32 devices, `mp-image-tool-esp32` will
 automatically erase any `data` partitions (eg. `nvs`, `otadata` or `vfs/fat`)
@@ -91,7 +98,7 @@ mount what appears to be a corrupt filesystem or nvs partition.
 
 `mp-image-tool-esp32` uses the
 [`esptool.py`](https://github.com/espressif/esptool) program to perform the
-operations on attached esp32 devices.
+operations on attached esp32 devices:
 
 - Select the specific method used to perform operations on the device:
   - `--method direct/command/subprocess`
@@ -103,22 +110,7 @@ operations on attached esp32 devices.
       perform operations on the device. This is more efficient as it skips
       repeated initialisation and querying of the device.
 
-    Versions prior to 0.0.5, used the `subprocess` method.
-
-### Flash firmware to an esp32 device
-
-If a serial device is provided to the `-o` or `--output` option, the
-firmware (including any changes made) will be flashed to the device, eg any of
-the following commands will re-flash your device with a new firmware:
-
-```bash
-mp-image-tool-esp32 firmware.bin -o u0
-mp-image-tool-esp32 firmware.bin -f 8M --table ota -o u0
-```
-
-is a convenient way to flash firmware to a device. `mp-image-tool-esp32` will
-automatically use the right `esptool` options to flash the firmware for your
-device (you don't need to remember if you should write to offset `0x0` or `0x1000`)
+    Versions prior to 0.0.5, always used the `subprocess` method.
 
 ## Installation
 
