@@ -133,7 +133,6 @@ class PartitionTable(List[Part]):
     """A class to hold a list of partitions (`Part`) in a partition table."""
 
     max_size: int
-    app_size: int
 
     # Copy the default flash layout values
     BOOTLOADER_SIZE = BOOTLOADER_SIZE
@@ -145,7 +144,6 @@ class PartitionTable(List[Part]):
 
     def __init__(self, max_size: int = 0) -> None:
         self.max_size = max_size
-        self.app_size = 0
 
     def find(self, name: str) -> Part | None:
         return next((p for p in self if p.name == name), None)

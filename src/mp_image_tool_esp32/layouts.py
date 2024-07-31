@@ -104,7 +104,7 @@ def from_csv(table: PartitionTable, filename: str) -> PartitionTable:
     return table
 
 
-def print_table(table: PartitionTable) -> None:
+def print_table(table: PartitionTable, app_size: int = 0) -> None:
     """Print a detailed description of the partition table."""
     colors = dict(c=log.CYAN, r=log.RED)
 
@@ -116,12 +116,12 @@ def print_table(table: PartitionTable) -> None:
     )
     print(table.print())
     print(log.RESET, end="")
-    if table.app_part and table.app_size:
+    if table.app_part and app_size:
         print(
             "Micropython app fills {used:0.1f}% of {app} partition "
             "({rem} kB free)".format(
-                used=100 * table.app_size / table.app_part.size,
+                used=100 * app_size / table.app_part.size,
                 app=table.app_part.name,
-                rem=(table.app_part.size - table.app_size) // KB,
+                rem=(table.app_part.size - app_size) // KB,
             )
         )

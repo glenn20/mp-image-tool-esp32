@@ -49,8 +49,6 @@ class Esp32Image(Firmware):
             esptool_method=esptool_method,
             reset_on_close=reset_on_close,
         )
-        self.app_size = 0  # TODO: Calculate this correctly
-        self.app_part_size = 0  # TODO: Calculate this correctly
 
     @cached_property
     def size(self) -> int:
@@ -64,7 +62,6 @@ class Esp32Image(Firmware):
         fin.seek(PartitionTable.PART_TABLE_OFFSET)
         data = fin.read(PartitionTable.PART_TABLE_SIZE)
         table = PartitionTable.from_bytes(data, self.header.flash_size)
-        table.app_size = self.app_size
         return table
 
     def _get_part(self, part: Part | str) -> Part:

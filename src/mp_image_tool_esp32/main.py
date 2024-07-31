@@ -24,7 +24,7 @@ from . import __version__, argtypes, layouts
 from . import logger as log
 from . import ota_update
 from .argparse_typed import parser as typed_parser
-from .argtypes import KB, MB, ArgList, PartList
+from .argtypes import MB, ArgList, PartList
 from .firmware_file import is_device
 from .image_file import Esp32Image
 from .partition_table import NAME_TO_TYPE, PartitionError, PartitionTable
@@ -170,13 +170,16 @@ def run_commands() -> None:
     log.info(
         f"Found {image.header.chip_name} {what} ({image.header.flash_size // MB}MB flash)."
     )
+    app_size = 0
+    if not image.is_device:
+        app_size = image.file.seek(0, 2) - image.table.app_part.offset
+        image.file.seek(image.bootloader)
+    if log.isloglevel("info"):
+        layouts.print_table(image.table, app_size)
+
+    # Make a copy of the partition table and image header for modification
     new_table: PartitionTable = copy.copy(image.table)
     new_header = image.file.header.copy()
-    if image.app_size:
-        x = image.app_size
-        log.info(f"Micropython App size: {x:#x} bytes ({x // KB:,d} KB)")
-    if log.isloglevel("info"):
-        layouts.print_table(new_table)
     extension = ""  # Each op that changes table adds identifier to extension
 
     if args.extract_app:  # -x --extract-app : Extract app image from firmware
@@ -243,7 +246,7 @@ def run_commands() -> None:
         if new_table.app_part.offset != image.table.app_part.offset:
             raise PartitionError("first app partition offset has changed", new_table)
         if log.isloglevel("info"):
-            layouts.print_table(new_table)
+            layouts.print_table(new_table, app_size)
         if not image.is_device:  # If input is a firmware file, make a copy
             # Make a copy of the firmware file and open the new firmware...
             output_filename = args.output or re.sub(
