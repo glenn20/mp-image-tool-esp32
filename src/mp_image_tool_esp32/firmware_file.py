@@ -6,7 +6,7 @@ from typing import IO, Union
 from typing_extensions import Buffer
 
 from . import logger as log
-from .esptool_io import BLOCKSIZE, esptool_wrapper
+from .esptool_io import BLOCKSIZE, get_esptool
 from .image_header import ImageHeader
 
 # Bootloader offsets for esp32 devices, indexed by chip name
@@ -72,7 +72,7 @@ class FirmwareDevice(IO[bytes]):
     ):
         if not os.path.exists(port):
             raise FileNotFoundError(f"No such device: '{port}'")
-        self.esptool = esptool_wrapper(port, baud, method=esptool_method)
+        self.esptool = get_esptool(port, baud, method=esptool_method)
         self.baud = self.esptool.baud
         self.reset_on_close = reset_on_close
         chip_name = self.esptool.chip_name

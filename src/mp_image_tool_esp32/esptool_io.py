@@ -165,7 +165,7 @@ def check_alignment(func: Callable[..., Any]) -> Callable[..., Any]:
 
 
 class ESPTool(ABC):
-    """Protocol for classes which provide an interface to an ESP32 device
+    """Base class for classes which provide an interface to an ESP32 device
     using `esptool.py`. The protocol defines the methods required to configure,
     read and write data to the device.
     """
@@ -266,7 +266,9 @@ class ESPToolSubprocess(ESPTool):
 
 
 class ESPToolModuleMain(ESPToolSubprocess):
-    """An ESPTool class which calls `esptool.main()` from the esptool module."""
+    """An ESPTool class which calls `esptool.main()` from the esptool module.
+    Overrides the esptool_cmd() method to run the esptool commands using
+    `esptool.main()` in this python process (instead of a subprocess)."""
 
     name = "command"
 
@@ -369,10 +371,10 @@ esptool_methods: dict[str, type[ESPToolSubprocess]] = {
 }
 
 
-def esptool_wrapper(port: str, baud: int = 0, *, method: str = "direct") -> ESPTool:
-    """Connect to the ESP32 device on the specified serial `port`.
-    Returns an `ESPTool` object which can be used to read and write to the device.
-    The `method` parameter can be used to select the method used to connect to the
-    device. The default is the `direct` method which is more efficient."""
+def get_esptool(port: str, baud: int = 0, *, method: str = "direct") -> ESPTool:
+    """Return an `ESPTool` object which can be used to read and write to the
+    device. The `method` parameter can be used to select the method used to
+    connect to the device. The default is the `direct` method which is more
+    efficient."""
     meth = esptool_methods[method or "direct"]
     return meth(port, baud)
