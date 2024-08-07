@@ -336,6 +336,7 @@ class ESPToolModuleDirect(ESPToolModuleMain):
         args = Dictargs(
             flash_mode="keep",
             flash_size="keep",
+            flash_frequency="keep",
             compress=True,
             addr_filename=((pos, io.BytesIO(data)),),
         )
