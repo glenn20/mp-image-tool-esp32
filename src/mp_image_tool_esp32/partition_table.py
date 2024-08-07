@@ -19,10 +19,10 @@ from itertools import takewhile
 from typing import Any, Iterable, List, NamedTuple
 
 from . import logger as log
-from .argtypes import KB, MB
+from .argtypes import KB, MB, B
 
 # The default layout in flash storage on device
-FLASH_SIZE = 0x400_000  # Defaults size of flash storage (4 Megabytes)
+FLASH_SIZE = 0x400_000  # Default size of flash storage (4 Megabytes)
 BOOTLOADER_SIZE = 0x7_000  # Size allowed for Bootloader in flash
 PART_TABLE_OFFSET = 0x8_000  # Offset of the partition table in flash
 PART_TABLE_SIZE = 0x1_000  # Size of the partition table
@@ -319,15 +319,15 @@ class PartitionTable(List[Part]):
                     f"Warning: Free space before '{p.name}' "
                     f"({p.offset - offset:#x} bytes).",
                 )
-            if p.offset % 0x1_000:
+            if p.offset % (1 * B):
                 raise PartitionError(
                     f"'{p.name}' offset {p.offset:#x} is not multiple of 0x1000.", self
                 )
-            if p.size % 0x1_000:
+            if p.size % (1 * B):
                 raise PartitionError(
                     f"'{p.name}' size {p.size:#x} is not multiple of 0x1000.", self
                 )
-            if p.type_name == "app" and p.offset % 0x10_000:
+            if p.type_name == "app" and p.offset % (0x10 * B):
                 raise PartitionError(
                     f"App partition '{p.name}' offset {p.offset:#x}"
                     f" is not multiple of 0x10000.",
@@ -352,7 +352,9 @@ class PartitionTable(List[Part]):
             )
         if app_size and self.app_part.size < app_size:
             raise PartitionError(
-                f'App partition "{self.app_part.name}"'
-                f" is too small for micropython app ({app_size:#x} bytes).",
+                f"App partition '{self.app_part.name}' is too small for "
+                f"micropython app "
+                f"({self.app_part.size:#x} < {app_size:#x} bytes).\n"
+                "Use the '-a' option to set a larger app partition size.",
                 self,
             )
