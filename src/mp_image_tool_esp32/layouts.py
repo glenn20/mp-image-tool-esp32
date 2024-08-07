@@ -114,7 +114,7 @@ def print_table(table: PartitionTable, app_size: int = 0) -> None:
             size=table.max_size // MB, **colors
         )
     )
-    print(table.print())
+    print(table)
     print(log.RESET, end="")
     if table.app_part and app_size:
         print(

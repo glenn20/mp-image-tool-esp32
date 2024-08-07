@@ -159,7 +159,7 @@ class PartitionTable(List[Part]):
             raise PartitionError(f"Partition {subtype_name} not found.", self)
         return p
 
-    def print(self) -> str:
+    def __str__(self) -> str:
         format = "  {:16s} {:8s} {:8s} {:>#10x} {:>#10x} {:>#10x} {:>#5x} {:>10s}"
         header = ("Name", "Type", "SubType", "Offset", "Size", "End", "Flags", "")
         data = (

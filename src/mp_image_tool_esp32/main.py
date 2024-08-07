@@ -335,7 +335,7 @@ def main() -> int:
     except Exception as err:
         log.error(f"{type(err).__name__}: {err}")
         if isinstance(err, PartitionError) and err.table:
-            err.table.print()
+            print(err.table)
         if log.isloglevel("debug"):
             raise err  # Re-raise the exception to get a stack trace
         return 1
