@@ -312,6 +312,7 @@ def run_commands() -> None:
     if args.flash:  # --flash DEVICE : Flash firmware to the device
         filename = expand_device_short_names(args.flash)
         image2 = None
+        log.action(f"Opening device: {filename}...")
         try:
             image2 = Esp32Image(
                 filename,
@@ -321,6 +322,12 @@ def run_commands() -> None:
             )
             if not image2.is_device:
                 raise ValueError("Flashing requires a device, not a firmware file.")
+            log.info(
+                "Found {} device ({}MB flash).".format(
+                    image2.header.chip_name, image2.header.flash_size // MB
+                )
+            )
+            log.action(f"Flashing firmware to device: {filename}...")
             image2.write_firmware(image)
         finally:
             if image2:

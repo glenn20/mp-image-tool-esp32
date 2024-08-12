@@ -6,6 +6,7 @@ from typing import IO, Union
 from typing_extensions import Buffer
 
 from . import logger as log
+from .argtypes import MB
 from .esptool_io import BLOCKSIZE, get_esptool
 from .image_header import ImageHeader
 
@@ -90,8 +91,8 @@ class FirmwareDevice(IO[bytes]):
             )
         if flash_size and flash_size != self.header.flash_size:
             log.error(
-                f"Detected flash size ({flash_size}) is different "
-                f"from firmware bootloader ({self.header.flash_size})."
+                f"Detected flash size ({flash_size//MB}MB) is different "
+                f"from firmware bootloader ({self.header.flash_size//MB}MB)."
             )
 
     def read(self, size: Union[int, None] = None) -> bytes:

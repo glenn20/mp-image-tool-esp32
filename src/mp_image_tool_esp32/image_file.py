@@ -156,8 +156,8 @@ class Esp32Image(Firmware):
             )
         if src.flash_size != dst.flash_size:
             log.warning(
-                f"Destination flash size ({dst.flash_size}) is different from "
-                f"source flash_size ({src.flash_size})."
+                f"Destination flash size ({dst.flash_size // MB}MB) is "
+                f"different from source flash_size ({src.flash_size // MB}MB)."
             )
         f = self.file
         f.seek(self.bootloader)
