@@ -64,15 +64,12 @@ def ctypes_repr(x: Any, indent: str = "") -> str:
     if isinstance(x, Array):
         return f"[{', '.join(repr(i) for i in x)}]"
     elif isinstance(x, Structure):
-        indent += "  "
         args = "\n".join(
-            (
-                f"  {f}={ctypes_repr(getattr(x, f), indent)},"
-                for f, *_ in x._fields_
-                if not f[0].startswith("_")
-            )
+            f"{indent}  {f}={ctypes_repr(getattr(x, f), indent + '  ')},"
+            for f, *_ in x._fields_
+            if not f[0].startswith("_")
         )
-        return f"{x.__class__.__name__}(\n{args}\n)"
+        return f"{indent}{x.__class__.__name__}(\n{args}\n)"
     else:
         return repr(x)
 
@@ -175,7 +172,7 @@ def calculate_image_size_and_hash(data: bytes | bytearray) -> tuple[int, bytes]:
 def check_image_hash(data: bytes | bytearray) -> Tuple[int, bytes, bytes]:
     """Check the sha256 hash at the end of the bootloader image data."""
     n, sha = calculate_image_size_and_hash(data)
-    return n, sha, bytes(data[n : n + len(sha)])  # Return the calculated and stored hashes
+    return n, sha, bytes(data[n : n + len(sha)])  # Return the calc and stored hashes
 
 
 def update_image(hdr: ImageHeader, data: bytes | bytearray) -> Tuple[bytearray, int]:
