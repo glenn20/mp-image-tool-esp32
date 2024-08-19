@@ -386,25 +386,24 @@ mp-image-tool-esp32 --write factory=ESP32_GENERIC-20231005-v1.21.0.app-bin
 ```text
 usage: mp-image-tool-esp32 [-h] [-o FILE] [-q] [-d] [-n] [-x] [-f SIZE] [-a SIZE] [-m METHOD]
                            [--check-app] [--no-rollback] [--baud RATE] [--ota-update FILE]
-                           [--from-csv FILE]
-                           [--table ota/default/NAME1=SUBTYPE:SIZE[,NAME2,...]]
-                           [--delete NAME1[,NAME2]]
-                           [--add NAME1:SUBTYPE:OFFSET:SIZE[,NAME2,...]]
+                           [--from-csv FILE] [--table ota/default/NAME1=SUBTYPE:SIZE[,NAME2,...]]
+                           [--delete NAME1[,NAME2]] [--add NAME1:SUBTYPE:OFFSET:SIZE[,NAME2,...]]
                            [--resize NAME1=SIZE1[,NAME2=SIZE2]] [--erase NAME1[,NAME2]]
                            [--erase-fs NAME1[,NAME2]]
                            [--read NAME1=FILE1[,NAME2=FILE2,bootloader=FILE,...]]
                            [--write NAME1=FILE1[,NAME2=FILE2,bootloader=FILE,...]]
+                           [--flash DEVICE]
                            filename
 
 Tool for manipulating MicroPython esp32 firmware files and flash storage on esp32 devices.
 
 positional arguments:
-  filename              the esp32 firmware image filename or serial device
+  filename              the esp32 firmware filename or serial device
 
 options:
   -h, --help            show this help message and exit
   -o FILE, --output FILE
-                        output filename or device to flash firmware
+                        output firmware filename (auto-generated if not given)
   -q, --quiet           set debug level to WARNING (default: INFO)
   -d, --debug           set debug level to DEBUG (default: INFO)
   -n, --no-reset        leave device in bootloader mode afterward
@@ -422,9 +421,9 @@ options:
   --from-csv FILE       load new partition table from CSV file
   --table ota/default/NAME1=SUBTYPE:SIZE[,NAME2,...]
                         create new partition table, eg: "--table ota" (install an OTA-enabled
-                        partition table), "--table default" (default (non-OTA) partition
-                        table), "--table nvs=7B,factory=2M,vfs=0". SUBTYPE is optional in most
-                        cases (inferred from name).
+                        partition table), "--table default" (default (non-OTA) partition table),
+                        "--table nvs=7B,factory=2M,vfs=0". SUBTYPE is optional in most cases
+                        (inferred from name).
   --delete NAME1[,NAME2]
                         delete the named partitions
   --add NAME1:SUBTYPE:OFFSET:SIZE[,NAME2,...]
@@ -440,20 +439,12 @@ options:
   --read NAME1=FILE1[,NAME2=FILE2,bootloader=FILE,...]
                         copy partition contents (or bootloader) to file.
   --write NAME1=FILE1[,NAME2=FILE2,bootloader=FILE,...]
-                        write file(s) contents into partitions (or bootloader) in the
-                        firmware.
+                        write file(s) contents into partitions (or bootloader) in the firmware.
+  --flash DEVICE        flash new firmware to the serial-attached device.
 
-Where SIZE is a decimal or hex number with an optional suffix (M=megabytes, K=kilobytes,
-B=blocks (0x1000=4096 bytes)).
-
-Options --erase-fs and --ota-update can only be used when operating on serial-attached devices
-(not firmware files).
-
-If a serial device is provided to the `-o` or `--output` option, the firmware (including any
-changes made) will be flashed to the device, eg:
-
-    `mp-image-tool-esp32 firmware.bin -o u0`
-
-is a convenient way to flash firmware to a device.
-
+Where SIZE is a decimal or hex number with an optional suffix (M=megabytes, K=kilobytes, B=blocks
+(0x1000=4096 bytes)). Options --erase-fs and --ota-update can only be used when operating on
+serial-attached devices (not firmware files). If the --flash options is provided, the firmware
+(including any changes made) will be flashed to the device, eg: `mp-image-tool-esp32 firmware.bin
+--flash u0` is a convenient way to flash firmware to a device.
 ```
