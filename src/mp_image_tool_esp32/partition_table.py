@@ -59,6 +59,9 @@ class PartitionError(Exception):
         super().__init__(msg or "Error in partition table.")
         self.table = table
 
+    def __str__(self) -> str:
+        return f"{super().__str__()}\n{self.table}" if self.table else super().__str__()
+
 
 class PartTuple(NamedTuple):
     """An entry in the partition table."""

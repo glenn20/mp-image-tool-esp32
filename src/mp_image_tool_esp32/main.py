@@ -17,11 +17,11 @@ import platform
 import re
 import shutil
 import sys
+import traceback
 from pathlib import Path
 
-from . import __version__, argtypes, layouts
+from . import __version__, argtypes, layouts, ota_update
 from . import logger as log
-from . import ota_update
 from .argparse_typed import parser as typed_parser
 from .argtypes import MB, ArgList, PartList
 from .image_file import Esp32Image
@@ -241,6 +241,7 @@ def run_commands() -> None:
             new_table.add_part(name, subtype, size, offset)
         extension += f"-add={argtypes.unsplit(args.add)}"
 
+    ## We have performed all the changes to the partition table...
     ## Write modified partition table to a new file or back to flash storage
 
     if extension or args.output:  # A change has been made to the partition table
@@ -339,12 +340,11 @@ def run_commands() -> None:
 def main() -> int:
     try:
         run_commands()
-    except Exception as err:
+    except (KeyboardInterrupt, Exception) as err:
         log.error(f"{type(err).__name__}: {err}")
-        if isinstance(err, PartitionError) and err.table:
-            print(err.table)
         if log.isloglevel("debug"):
-            raise err  # Re-raise the exception to get a stack trace
+            log.info("Traceback (most recent call last):")
+            log.info("".join(traceback.format_tb(err.__traceback__)))
         return 1
     return 0
 
