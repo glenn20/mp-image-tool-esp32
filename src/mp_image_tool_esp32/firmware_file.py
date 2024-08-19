@@ -90,10 +90,11 @@ class FirmwareDevice(IO[bytes]):
                 f"from firmware bootloader ({self.header.chip_name})."
             )
         if flash_size and flash_size != self.header.flash_size:
-            log.error(
+            log.warning(
                 f"Detected flash size ({flash_size//MB}MB) is different "
                 f"from firmware bootloader ({self.header.flash_size//MB}MB)."
             )
+            self.header.flash_size = flash_size  # Use the detected size
 
     def read(self, size: Union[int, None] = None) -> bytes:
         log.debug(f"Reading {size:#x} bytes from {self.pos:#x}...")
