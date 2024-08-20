@@ -246,6 +246,11 @@ def run_commands() -> None:
     ## We have performed all the changes to the partition table...
     ## Write modified partition table to a new file or back to flash storage
 
+    if args.erase and not image.is_device:
+        extension += f"-erase={argtypes.unsplit(args.erase)}"
+    if args.write and not image.is_device:
+        extension += f"-write={argtypes.unsplit(args.write)}"
+
     if extension or args.output:  # A change has been made to the partition table
         if new_table.app_part.offset != image.table.app_part.offset:
             raise PartitionError("first app partition offset has changed", new_table)
