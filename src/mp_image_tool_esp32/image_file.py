@@ -183,7 +183,7 @@ class Esp32Image(Firmware):
             if not self._check_app_image(data, part.name):
                 log.warning(f"Partition '{part.name}': App image signature not found.")
                 continue
-            log.action(f"Partition '{part.name}': App image signature found.")
+            log.info(f"Partition '{part.name}': App image signature found.")
             if not check_hash:
                 continue
             f.seek(part.offset)
@@ -197,7 +197,7 @@ class Esp32Image(Firmware):
                     f"Partition '{part.name}': Hash mismatch ({size=} {sha=} {stored=})"
                 )
             else:
-                log.action(f"Partition '{part.name}': Hash confirmed ({size=}).")
+                log.info(f"Partition '{part.name}': Hash confirmed ({size=}).")
 
     def check_data_partitions(self, new_table: PartitionTable) -> None:
         """Erase any data partitions in `new_table` which have been moved or resized."""
