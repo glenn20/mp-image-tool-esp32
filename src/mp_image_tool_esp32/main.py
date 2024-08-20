@@ -216,7 +216,7 @@ def run_commands() -> None:
         else:
             extension += "-TABLE"
         # Build a partition table from the PartList
-        new_table = layouts.new_table(new_table, args.table)
+        new_table = layouts.new_table(new_table, args.table, app_size)
         new_table.check()
 
     if args.app_size:  # -a --app-size SIZE : Resize all the APP partitions

@@ -18,7 +18,7 @@ import csv
 
 from . import logger as log
 from .argtypes import KB, MB, PartList
-from .partition_table import PartitionTable
+from .partition_table import PartitionError, PartitionTable
 
 # Recommended size for OTA app partitions (depends on flash_size).
 # These choices match OTA partition sizes in ports/esp32/partition-*-ota.csv.
@@ -64,6 +64,7 @@ def get_subtype(name: str, subtype: str) -> str:
 def new_table(
     table: PartitionTable,
     table_layout: PartList,
+    app_size: int = 0,  # Size of the firmware app (bytes)
 ) -> PartitionTable:
     """Build a new partition table from the provided layout.
     For each tuple, if subtype is `""`, infer `subtype` from name."""
@@ -71,6 +72,13 @@ def new_table(
     for name, *subtype, offset, size in table_layout:
         subtype = get_subtype(name, subtype[0] if subtype else "")
         table.add_part(name, subtype, size, offset)
+    if table.app_part and table.app_part.size < app_size:
+        raise PartitionError(
+            f"App size ({app_size}) exceeds '{table.app_part.name}' "
+            f"partition size ({table.app_part.size}):\n"
+            "  Use the '-a' option to set the app partition size.",
+            table,
+        )
     return table
 
 
