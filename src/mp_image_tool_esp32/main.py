@@ -190,6 +190,8 @@ def run_commands() -> None:
         output = args.output or re.sub(r"(.bin)?$", ".app-bin", basename, 1)
         log.action(f"Writing micropython app image file: {output}...")
         image.save_app_image(output)
+        image.file.close()
+        return
 
     if args.flash_size:  # -f --flash-size SIZE : Set size of the flash storage
         if args.flash_size != image.header.flash_size:
