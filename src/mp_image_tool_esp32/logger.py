@@ -4,6 +4,7 @@
 
 import logging
 from logging import CRITICAL, DEBUG, ERROR, INFO, NOTSET, WARNING
+import sys
 from typing import Any
 
 import colorama
@@ -33,7 +34,7 @@ log_levels = {
 
 colorama.init()
 logging.addLevelName(ACTION, "ACTION")
-logging.basicConfig(format=FORMAT)
+logging.basicConfig(stream=sys.stdout, format=FORMAT)
 logger = logging.getLogger()  # Use the root logger
 logger.setLevel(logging.INFO)
 
