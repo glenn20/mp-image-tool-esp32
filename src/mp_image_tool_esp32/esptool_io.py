@@ -457,5 +457,5 @@ def get_esptool(port: str, baud: int = 0, *, method: str = "direct") -> ESPTool:
     device. The `method` parameter can be used to select the method used to
     connect to the device. The default is the `direct` method which is more
     efficient."""
-    esptool = esptool_methods[method]
+    esptool = esptool_methods[method or "direct"]
     return esptool(port, baud)
