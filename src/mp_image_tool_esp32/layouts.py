@@ -27,6 +27,12 @@ OTA_PART_SIZES = (
     (4 * MB, 0x200_000),  # else if flash size > 4MB
     (0 * MB, 0x180_000),  # else if flash size > 0MB
 )
+ORIGINAL_TABLE_LAYOUT = """
+nvs     : nvs       : 0x6000,
+phy_init: phy       : 0x1000,
+factory : factory   : 0x1f0000,
+vfs     : fat       : 0
+"""
 DEFAULT_TABLE_LAYOUT = """
 nvs     : nvs       : 0x7000,
 factory : factory   : 0x1f0000,

@@ -96,7 +96,7 @@ usage = """
     --baud RATE         | baud rate for serial port (default: 460800)
     --ota-update FILE   | perform an OTA firmware upgrade over the serial port
     --from-csv FILE     | load new partition table from CSV file
-    --table ota/default/NAME1=SUBTYPE:SIZE[,NAME2,...] \
+    --table ota/default/original/NAME1=SUBTYPE:SIZE[,NAME2,...] \
                         | create new partition table, eg: \
                             "--table ota" (install an OTA-enabled partition table),\
                             "--table default" (default (non-OTA) partition table),\
@@ -213,6 +213,10 @@ def run_commands() -> None:
             # DEFAULT_TABLE_LAYOUT is a string, so parse it into a PartList
             args.table = argtypes.partlist(layouts.DEFAULT_TABLE_LAYOUT)
             extension += "-DEFAULT"
+        elif args.table == [("original", "", 0, 0)]:
+            # DEFAULT_TABLE_LAYOUT is a string, so parse it into a PartList
+            args.table = argtypes.partlist(layouts.ORIGINAL_TABLE_LAYOUT)
+            extension += "-ORIGINAL"
         else:
             extension += "-TABLE"
         # Build a partition table from the PartList
@@ -327,6 +331,7 @@ def run_commands() -> None:
                 args.baud,
                 reset_on_close=not args.no_reset,
                 esptool_method=args.method,
+                check=False,
             )
             if not image2.is_device:
                 raise ValueError("Flashing requires a device, not a firmware file.")

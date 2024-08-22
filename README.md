@@ -42,7 +42,8 @@ Micropython app fills 78.8% of factory partition (421 kB free)
   - `--resize-flash 8M` or `-f 8M`
 - Rewrite or modify the partition table:
   - `--table ota` : install an OTA-enabled partition table
-  - `--table default` : install the default micropython table (non-OTA)
+  - `--table default` : install a default micropython table (non-OTA, without 'phy_init')
+  - `--table original` : install the original default micropython table (non-OTA, with 'phy_init')
   - `--table nvs=6B,phy_init=1B,factory=0x1f0B,vfs=0` : specify a table layout
   - `--resize factory=2M,vfs=0x400K` : resize any partition (adjust other
     parts to fit)
@@ -419,7 +420,7 @@ options:
   --baud RATE           baud rate for serial port (default: 460800)
   --ota-update FILE     perform an OTA firmware upgrade over the serial port
   --from-csv FILE       load new partition table from CSV file
-  --table ota/default/NAME1=SUBTYPE:SIZE[,NAME2,...]
+  --table ota/default/original/NAME1=SUBTYPE:SIZE[,NAME2,...]
                         create new partition table, eg: "--table ota" (install an OTA-enabled
                         partition table), "--table default" (default (non-OTA) partition table),
                         "--table nvs=7B,factory=2M,vfs=0". SUBTYPE is optional in most cases
