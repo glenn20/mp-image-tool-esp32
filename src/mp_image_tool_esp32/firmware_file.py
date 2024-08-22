@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import io
 import os
 from collections import defaultdict
@@ -9,6 +11,7 @@ from . import logger as log
 from .argtypes import MB
 from .esptool_io import BLOCKSIZE, get_esptool
 from .image_header import ImageHeader
+from .partition_table import PartitionError
 
 # Bootloader offsets for esp32 devices, indexed by chip name
 # Offset is zero for all devices except esp32 and esp32s2
@@ -32,6 +35,7 @@ class FirmwareFile(io.BufferedRandom):
         # Detach the raw base file from `file` and attach it to this object
         f = open(name, "r+b")
         self.header = ImageHeader.from_file(f)
+        self.header.check()
         f.seek(0)  # Reset file position
         self.offset = BOOTLOADER_OFFSET[self.header.chip_name]
         super().__init__(f.detach())
@@ -70,35 +74,51 @@ class FirmwareDevice(IO[bytes]):
         *,
         esptool_method: str = "subprocess",
         reset_on_close: bool = True,
+        check: bool = True,
     ):
         if not os.path.exists(port):
             raise FileNotFoundError(f"No such device: '{port}'")
         self.esptool = get_esptool(port, baud, method=esptool_method)
         self.baud = self.esptool.baud
         self.reset_on_close = reset_on_close
-        chip_name = self.esptool.chip_name
-        flash_size = self.esptool.flash_size
+        self.detected_chip_name = self.esptool.chip_name
+        self.detected_flash_size = self.esptool.flash_size
         self.pos = 0
-        self.end = flash_size
-        self.seek(BOOTLOADER_OFFSET[chip_name])
+        self.end = self.detected_flash_size
+        self.seek(BOOTLOADER_OFFSET[self.detected_chip_name])
         # Check the bootloader header matches the detected device
         self.header = ImageHeader.from_file(self)
-        self.seek(BOOTLOADER_OFFSET[chip_name])
-        if chip_name and chip_name != self.header.chip_name:
-            log.error(
-                f"Detected device chip type ({chip_name}) is different "
-                f"from firmware bootloader ({self.header.chip_name})."
-            )
-        if flash_size and flash_size != self.header.flash_size:
-            log.warning(
-                f"Detected flash size ({flash_size//MB}MB) is different "
-                f"from firmware bootloader ({self.header.flash_size//MB}MB)."
-            )
-            self.header.flash_size = flash_size  # Use the detected size
+        self.seek(BOOTLOADER_OFFSET[self.detected_chip_name])
+        if check:
+            if self.header.is_erased():
+                raise PartitionError(
+                    "No bootloader found on flash.\n"
+                    "  Use '--flash' option to flash new firmware."
+                )
+            self.header.check()
+            if (
+                self.detected_chip_name
+                and self.detected_chip_name != self.header.chip_name
+            ):
+                log.error(
+                    f"Detected device chip type ({self.detected_chip_name}) is "
+                    f"different from firmware bootloader ({self.header.chip_name})."
+                )
+            if (
+                self.detected_flash_size
+                and self.detected_flash_size != self.header.flash_size
+            ):
+                log.warning(
+                    f"Detected flash size ({self.detected_flash_size//MB}MB) is "
+                    f"different from firmware bootloader ({self.header.flash_size//MB}MB)."
+                )
+                log.warning(
+                    "  Use the '-f' option to change the size in the bootloader."
+                )
 
-    def read(self, size: Union[int, None] = None) -> bytes:
-        log.debug(f"Reading {size:#x} bytes from {self.pos:#x}...")
+    def read(self, size: int | None = None) -> bytes:
         size = size if size is not None else self.end - self.pos
+        log.debug(f"Reading {size:#x} bytes from {self.pos:#x}...")
         data = self.esptool.read_flash(self.pos, size)
         if len(data) != size:
             raise ValueError(f"Read {len(data)} bytes from device, expected {size}.")
@@ -163,6 +183,7 @@ class Firmware:
         *,
         esptool_method: str = "direct",
         reset_on_close: bool = True,
+        check: bool = True,
     ):
         self.filename = filename
         self.file = (
@@ -171,13 +192,17 @@ class Firmware:
                 baud,
                 esptool_method=esptool_method,
                 reset_on_close=reset_on_close,
+                check=check,
             )
             if is_device(filename)
             else FirmwareFile(filename)
         )
+        self.is_device = isinstance(self.file, FirmwareDevice)
         hdr = self.file.header
-        self.bootloader = BOOTLOADER_OFFSET[hdr.chip_name]
-        self.is_device = is_device(filename)
-        self.file.seek(self.bootloader)
         self.header = hdr
         self.baud = 0
+        chip_name = hdr.chip_name
+        if not chip_name.startswith("esp") and isinstance(self.file, FirmwareDevice):
+            chip_name = self.file.detected_chip_name
+        self.bootloader = BOOTLOADER_OFFSET[chip_name]
+        self.file.seek(self.bootloader)

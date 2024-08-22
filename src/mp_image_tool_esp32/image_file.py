@@ -21,7 +21,7 @@ from typing import Tuple
 
 from . import logger as log
 from .argtypes import MB
-from .firmware_file import Firmware
+from .firmware_file import Firmware, FirmwareDevice, FirmwareFile
 from .image_header import ImageHeader, check_image_hash, update_image
 from .partition_table import BOOTLOADER_SIZE, Part, PartitionTable
 
@@ -42,12 +42,14 @@ class Esp32Image(Firmware):
         /,
         esptool_method: str = "",
         reset_on_close: bool = True,
+        check: bool = True,
     ) -> None:
         super().__init__(
             filename,
             baud,
             esptool_method=esptool_method,
             reset_on_close=reset_on_close,
+            check=check,
         )
 
     @cached_property
@@ -73,15 +75,17 @@ class Esp32Image(Firmware):
         """Check that `data` is a valid app image for this device/firmware."""
         try:
             header = ImageHeader.from_bytes(data)
+            header.check()
         except ValueError:
             return False
         if not header.chip_name:  # `data` is not an app image
             return False
         if header.chip_name != self.header.chip_name:
-            raise ValueError(
+            log.warning(
                 f"'{name}': App image chip type ({header.chip_name}) "
                 f"does not match bootloader ({self.header.chip_name})."
             )
+            return False
         if name == "bootloader" and header.flash_size != self.header.flash_size:
             log.warning(
                 f"'{name}': image flash size ({header.flash_size}) "
@@ -91,11 +95,9 @@ class Esp32Image(Firmware):
 
     def save_app_image(self, output: str) -> int:
         """Read the app image from the device and write it to a file."""
+        data = self.read_part(self.table.app_part)
         with open(output, "wb") as fout:
-            fin = self.file
-            fin.seek(self.table.app_part.offset)
-            fout.write(fin.read())
-            return fout.tell()
+            return fout.write(data.rstrip(b"\xff"))  # Remove trailing padding
 
     def erase_part(self, part: Part | str, size: int = 0) -> None:
         """Erase blocks on partition `part`. Erase whole partition if
@@ -129,16 +131,28 @@ class Esp32Image(Firmware):
                 f"Partition '{part.name}' ({part.size:#x} bytes)"
                 f" is too small for data ({len(data):#x} bytes)."
             )
+        skip_erase = (
+            # If this is the last partition of a firmware file, dont erase trailing blocks
+            isinstance(self.file, FirmwareFile)
+            and part.offset + part.size > self.size
+        )
+        pad = 0
+        if not skip_erase:
+            remainder = len(data) % self.BLOCKSIZE
+            pad = self.BLOCKSIZE - remainder if remainder else 0
+
         f = self.file
         f.seek(part.offset)
-        pad = self.BLOCKSIZE - (((len(data) - 1) % self.BLOCKSIZE) + 1)
-        n = f.write(bytes(data) + b"\xff" * pad)
+        n = f.write(data + b"\xff" * pad)  # Write the data and pad with 0xff
         if n < len(data) + pad:
             raise ValueError(f"Failed to write {len(data)} bytes to '{part.name}'.")
         if n < part.size:
-            log.action("Erasing remainder of partition...")
-            f.erase(part.size - n)  # Bypass write() to erase the flash
-        return n - pad
+            if skip_erase:
+                f.truncate()  # Truncate the file to the new size
+            else:
+                log.action("Erasing remainder of partition...")
+                f.erase(part.size - n - pad)  # Erase remaining blocks
+        return n
 
     def read_firmware(self) -> bytes:
         """Return the entire firmware from this image as `bytes"""
@@ -148,12 +162,9 @@ class Esp32Image(Firmware):
 
     def write_firmware(self, image: Esp32Image) -> int:
         """Write firmware from `image` into this image."""
+        if not isinstance(self.file, FirmwareDevice):
+            raise ValueError("Must flash firmware to a device.")
         src, dst = image.header, self.header
-        if src.chip_name != dst.chip_name:
-            raise ValueError(
-                f"Destination chip type ({dst.chip_name}) is different from "
-                f"source chip type ({src.chip_name})."
-            )
         if src.flash_size != dst.flash_size:
             log.warning(
                 f"Destination flash size ({dst.flash_size // MB}MB) is "
@@ -162,9 +173,13 @@ class Esp32Image(Firmware):
         f = self.file
         f.seek(self.bootloader)
         data = image.read_firmware()
-        size = f.write(bytes(data))
-        if size < len(data):
+        pad = self.BLOCKSIZE - (((len(data) - 1) % self.BLOCKSIZE) + 1)
+        size = f.write(data + b"\xff" * pad)
+        if size < len(data) + pad:
             raise ValueError(f"Failed to write {len(data)} bytes to '{self.filename}'.")
+        if p := next((p for p in image.table if p.offset + p.size >= size), None):
+            log.action(f"Erasing remainder of partition '{p.name}'...")
+            f.erase(p.offset + p.size - size)
         return size
 
     def check_app_partitions(

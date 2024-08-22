@@ -88,7 +88,7 @@ class ImageHeader(ImageHeaderStruct):
         0x0D: "esp32c6",
         0x10: "esp32h2",
         0x12: "esp32p4",
-        0xFFFF: "invalid",
+        0xFFFF: "none",
     }
     initial_crc32: int  # Checksum of the image header
 
@@ -96,10 +96,13 @@ class ImageHeader(ImageHeaderStruct):
         super().__init__(*args, **kwargs)
         self.check()
 
+    def is_erased(self) -> bool:
+        return bytes(self).count(0xFF) == sizeof(self)
+
     def check(self) -> ImageHeader:
         if self.magic != self.APP_IMAGE_MAGIC:
             raise ValueError("Invalid image file: magic bytes not found.")
-        if self.chip_name == "invalid":
+        if not self.chip_name.startswith("esp32"):
             raise ValueError("Invalid chip id in image header.")
         self.initial_crc32 = binascii.crc32(self)  # Calculate the checksum
         return self
@@ -111,10 +114,7 @@ class ImageHeader(ImageHeaderStruct):
     @cached_property
     def chip_name(self) -> str:
         """Return the chip name from the bootloader header."""
-        chip_name = self.CHIP_IDS.get(self.chip_id, str(self.chip_id))
-        if chip_name == "invalid":
-            raise ValueError("Invalid chip id in image header.")
-        return chip_name
+        return self.CHIP_IDS.get(self.chip_id, "invalid")
 
     @property
     def flash_size(self) -> int:
@@ -140,7 +140,9 @@ class ImageHeader(ImageHeaderStruct):
     @classmethod
     def from_bytes(cls, data: bytes | bytearray) -> ImageHeader:
         """Read the image header from a file."""
-        return cls.from_buffer_copy(data).check()
+        hdr = cls.from_buffer_copy(data)
+        hdr.initial_crc32 = binascii.crc32(data)
+        return hdr
 
     @classmethod
     def from_file(cls, file: IO[bytes]) -> ImageHeader:
