@@ -1,6 +1,7 @@
 /*.bin
 /*.app-bin
 /ota/
+/tests/data
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
