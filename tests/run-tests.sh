@@ -8,20 +8,26 @@ eval "$(pyenv init -)"
 
 Usage() {
     echo "Usage: $0 [--install-versions] [--init]"
-    echo "  --install-versions: Install the Python versions"
-    echo "  --init: Setup the Python versions"
+    echo "  --install-pyversions: Install the Python versions"
+    echo "  --init-pyversions: Setup the Python versions"
+    echo "  --pyversion <version|all>: Run tests for specific Python versions"
+    echo "  --firmware <file|all>: Run tests for specific firmware files"
+    echo "  --device <device>: Run tests for device on serial port"
     exit 1
 }
 
-for arg in $@; do
-    case $arg in
-        --install-versions)
+testdir=$(dirname $0)
+
+args=""
+while [ $# -gt 0 ]; do
+    case $1 in
+        --install-pyversions)
             # Install the Python versions
             for version in $pyenv_versions; do
                 pyenv install -s $version
             done
             ;;
-        --init-versions)
+        --init-pyversions)
             # Setup the Python versions
             for version in $pyenv_versions; do
                 pyenv shell $version
@@ -30,25 +36,34 @@ for arg in $@; do
                 pyenv exec pip install -r requirements.txt
             done
             ;;
-        --versions)
+        --pyversion)
             # Run the tests for the specified Python versions
-            versions="$pyenv_versions"
+            if [ "$2" = "all" ]; then
+                versions="$pyenv_versions"
+            else
+                versions="$2"
+            fi
+            shift
             ;;
-        -v)
-            # List the Python versions
-            versions="$versions $2"
+        --firmware)
+            # Run the tests on the specified firmware
+            if [ "$2" = "all" ]; then
+                files="$(ls ${testdir}/data/ESP*.bin)"
+            else
+                files="$(ls ${testdir}/data/*$2*)"
+            fi
             shift
             ;;
         --device)
             # Run the tests on the specified device
-            device="$2"
+            args="$args --device $2"
             shift
             ;;
         *)
-            echo "Unknown argument: $arg"
-            exit 1
+            args="$args $arg"
             ;;
     esac
+    shift
 done
 
 # Run the tests
@@ -57,13 +72,20 @@ if [ -n "$versions" ]; then
     for version in $versions; do
         echo "Running tests for Python $version"
         pyenv shell $version
-        pyenv exec python -m pytest
+        pyenv exec python -m pytest $args
     done
+    exit 0
 fi
 
-if [ -n "$device" ]; then
-    echo "Running tests on device: $device"
-    pyenv exec python -m pytest --device $device
+if [ -n "$files" ]; then
+    echo "Running tests for firmware files: $files"
+    for f in $files; do
+        name=$(basename $f)
+        echo "Running tests for firmware file: $name"
+        pytest $args --firmware $name
+    done
+    exit 0
 fi
 
+pytest $args
 

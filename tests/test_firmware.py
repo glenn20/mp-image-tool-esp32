@@ -6,7 +6,7 @@ from pathlib import Path
 
 import yaml
 
-from .conftest import mpi_run
+from .conftest import mpi_run, striplines
 
 rootdir = Path(__file__).parent.parent
 test_outputs = rootdir / "tests" / "test_outputs.yaml"
@@ -17,15 +17,13 @@ with open(test_outputs) as f:
 
 def mpi_check(firmware: Path, args: str) -> None:
     output = mpi_run(firmware, args)
-    for line in OUTPUTS[args].strip().splitlines():
-        assert line in output
+    assert striplines(OUTPUTS[args]) in striplines(output)
 
 
 def mpi_check_output(firmware: Path, args: str) -> None:
     mpi_run(firmware, args)
     output = mpi_run(firmware)
-    for line in OUTPUTS[args].strip():
-        assert line in output
+    assert striplines(OUTPUTS[args]) in striplines(output)
 
 
 def test_python_version(firmware: Path):
@@ -76,14 +74,13 @@ def test_read(firmware: Path, bootloader: bytes):
 
 
 def test_write(firmware: Path):
-    input = bytes(range(32)) * 8
-    input_file = Path("input.bin")
-    input_file.write_bytes(input)
-    out = Path("out.bin")
-    mpi_run(firmware, f"--write phy_init={input_file.name}")
-    mpi_run(firmware, f"--read phy_init={out.name}")
-    output = out.read_bytes()
-    assert len(output) == 0x1000
+    input = bytes(range(32)) * 8  # 256 data bytes to write
+    infile, outfile = Path("input.bin"), Path("out2.bin")
+    infile.write_bytes(bytes(range(32)) * 8)
+    mpi_run(firmware, f"--write phy_init={infile}")
+    mpi_run(firmware, f"--read phy_init={outfile}")
+    output = outfile.read_bytes()
+    assert len(output) == 4096
     output = output.rstrip(b"\xFF")
     assert len(output) == len(input)
     assert output == input
@@ -93,7 +90,7 @@ def test_erase(firmware: Path):
     mpi_run(firmware, "--erase phy_init")
     mpi_run(firmware, "--read phy_init=output.bin")
     output = Path("output.bin").read_bytes()
-    assert len(output) == 0x1000
+    assert len(output) == 4096
     assert output.count(0xFF) == len(output)
 
 
