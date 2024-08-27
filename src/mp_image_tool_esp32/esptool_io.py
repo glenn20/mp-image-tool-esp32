@@ -1,13 +1,11 @@
 # MIT License: Copyright (c) 2023 @glenn20
-"""Provides a File-like interface to the flash storage on a serial-attached
-ESP32 device (ESP32/S2/S3/C2/C3).
+"""Provides an interface to the flash storage on a serial-attached ESP32
+device (ESP32/S2/S3/C2/C3).
 
-Provides the `EspTool` abstract base class provides methods for reading and
+Defines the `EspTool` abstract base class which provides methods for reading and
 writing flash storage on an ESP32 device.
 
-Also provides the `ESPToolSubprocess`, `ESPToolModuleMain` and
-`ESPToolModuleDirect` classes which are different implementations of the
-`ESPTool` interface:
+Also provides three different implementations of the `ESPTool` interface:
 
 - `ESPToolSubprocess` performs operations by running `esptool.py` as a shell
   command in a subprocess using `Popen()`.
@@ -17,7 +15,7 @@ Also provides the `ESPToolSubprocess`, `ESPToolModuleMain` and
 
 - `ESPToolCommandDirect` performs operations by calling lower-level methods in
   the `esptool` module. Generally, this is the most efficient method for
-  performing operations onThe ESP32 device.
+  performing operations on the ESP32 device.
 
 All esptool.py commands and output are logged to the DEBUG facility.
 """
@@ -49,6 +47,55 @@ BAUDRATES = (115200, 230400, 460800, 921600, 1500000, 2000000, 3000000)
 BAUDRATE = 921600  # Default baudrate for esptool.py
 BLOCKSIZE = B  # Block size for erasing/writing regions of the flash storage
 
+
+class ESPTool(ABC):
+    """Base class for classes which provide an interface to an ESP32 device
+    using `esptool.py`. The protocol defines the methods required to configure,
+    read and write data to the device.
+    """
+
+    port: str
+    baud: int
+    chip_name: str
+    flash_size: int
+    esptool_args: str = "--after no_reset"
+
+    @abstractmethod
+    def __init__(self, port: str, baud: int) -> None:
+        """Execute an `esptool.py` command and return the output as a string."""
+        ...
+
+    @abstractmethod
+    def esptool_cmd(self, command: str, *, size: int = 0) -> str:
+        """Execute an `esptool.py` command and return the output as a string."""
+        ...
+
+    @abstractmethod
+    def write_flash(self, pos: int, data: bytes) -> int:
+        """Write `data` to the device flash storage at position `pos`."""
+        ...
+
+    @abstractmethod
+    def read_flash(self, pos: int, size: int) -> bytes:
+        """Read `size` bytes from the device flash storage at position `pos`."""
+        ...
+
+    @abstractmethod
+    def erase_flash(self, pos: int, size: int) -> None:
+        """Erase a region of the device flash storage starting at `pos`."""
+        ...
+
+    @abstractmethod
+    def hard_reset(self) -> None:
+        """Perform a hard reset of the device using the RTS pin."""
+        ...
+
+    @abstractmethod
+    def close(self) -> None:
+        """Close the connection to the device."""
+        ...
+
+
 # Arguments for the tqdm progress bar
 tqdm_args: dict[str, Any] = dict(
     delay=0,
@@ -72,31 +119,6 @@ tqdm_args: dict[str, Any] = dict(
 PROGRESS_BAR_MESSAGE_REGEXP = re.compile(
     r"(Writing at )?((0x)?[0-9a-f]+)[.]* *\(([0-9]+) *%\)[\n\r\x08]$"
 )
-
-
-class StringIO_RW(io.StringIO):
-    """A thread-safe StringIO buffer which can be read to and written from."""
-
-    def __init__(self, s: str = ""):
-        super().__init__()
-        self.buf = s
-        self.lock = Lock()
-
-    def read(self, size: int | None = None) -> str:
-        while not self.closed and len(self.buf) < (size or 1):
-            time.sleep(0.1)
-        with self.lock:
-            n = size or len(self.buf)
-            s = self.buf[:n]
-            self.buf = self.buf[n:]
-            return s
-
-    def write(self, s: str) -> int:
-        if self.closed:
-            raise ValueError("I/O operation on closed file.")
-        with self.lock:
-            self.buf += s
-            return len(s)
 
 
 def set_baudrate(baud: int) -> int:
@@ -160,6 +182,31 @@ class ESPToolProgressBar:
         self.output += self.input.read()
 
 
+class StringIO_RW(io.StringIO):
+    """A thread-safe StringIO buffer which can be read from and written to."""
+
+    def __init__(self, s: str = ""):
+        super().__init__()
+        self.buf = s
+        self.lock = Lock()
+
+    def read(self, size: int | None = None) -> str:
+        while not self.closed and len(self.buf) < (size or 1):
+            time.sleep(0.1)
+        with self.lock:
+            n = size or len(self.buf)
+            s = self.buf[:n]
+            self.buf = self.buf[n:]
+            return s
+
+    def write(self, s: str) -> int:
+        if self.closed:
+            raise ValueError("I/O operation on closed file.")
+        with self.lock:
+            self.buf += s
+            return len(s)
+
+
 # A context manager to redirect stdout and stderr to a buffer
 # Will print stderr to stdout if an error occurs
 # This is used to wrap calls to esptool module functions directly
@@ -176,7 +223,7 @@ def redirect_stdout_stderr(name: str = "esptool") -> Generator[IO[str], None, No
 
     error = None
     try:
-        yield sys.stdout  # Pass the output as value of the contextmanager
+        yield out  # Pass the output as value of the contextmanager
     except Exception as e:
         error = e
     finally:
@@ -229,6 +276,9 @@ def esptool_subprocess(command: str, *, size: int = 0) -> str:
 
 
 def check_alignment(func: Callable[..., Any]) -> Callable[..., Any]:
+    """Raise a ValueError if any of the arguments are integers that are not
+    aligned to the `BLOCKSIZE`."""
+
     def inner(self: Any, *args: Sequence[Any]) -> Callable[..., Any]:
         for arg in args:
             if isinstance(arg, int):
@@ -242,55 +292,9 @@ def check_alignment(func: Callable[..., Any]) -> Callable[..., Any]:
     return inner
 
 
-class ESPTool(ABC):
-    """Base class for classes which provide an interface to an ESP32 device
-    using `esptool.py`. The protocol defines the methods required to configure,
-    read and write data to the device.
-    """
-
-    name: str
-    port: str
-    baud: int
-    chip_name: str
-    flash_size: int
-    esptool_args: str = "--after no_reset"
-
-    @abstractmethod
-    def esptool_cmd(self, command: str, *, size: int = 0) -> str:
-        """Execute an `esptool.py` command and return the output as a string."""
-        ...
-
-    @abstractmethod
-    def write_flash(self, pos: int, data: bytes) -> int:
-        """Write `data` to the device flash storage at position `pos`."""
-        ...
-
-    @abstractmethod
-    def read_flash(self, pos: int, size: int) -> bytes:
-        """Read `size` bytes from the device flash storage at position `pos`."""
-        ...
-
-    @abstractmethod
-    def erase_flash(self, pos: int, size: int) -> None:
-        """Erase a region of the device flash storage starting at `pos`."""
-        ...
-
-    @abstractmethod
-    def hard_reset(self) -> None:
-        """Perform a hard reset of the device using the RTS pin."""
-        ...
-
-    @abstractmethod
-    def close(self) -> None:
-        """Close the connection to the device."""
-        ...
-
-
 class ESPToolSubprocess(ESPTool):
     """An ESPTool class which runs esptool commands in a `esptool.py`
     subprocess."""
-
-    name = "subprocess"
 
     def __init__(self, port: str, baud: int = 0):
         self.port = port
@@ -345,8 +349,6 @@ class ESPToolModuleMain(ESPToolSubprocess):
     Overrides the esptool_cmd() method to run the esptool commands using
     `esptool.main()` in this python process (instead of a subprocess)."""
 
-    name = "command"
-
     def __init__(self, port: str, baud: int = 0):
         """Connect to the ESP32 device on the specified serial `port`.
         Returns a tuple of the `esp` object, `chip_name` and `flash_size`.
@@ -359,8 +361,8 @@ class ESPToolModuleMain(ESPToolSubprocess):
         Calls the `main()` function in the `esptool` module with the command."""
         cmd = f"{self.esptool_args} --baud {self.baud} --port {self.port} {command}"
         log.debug(f"$ esptool.py {cmd}")
-        with redirect_stdout_stderr(command) as output:
-            with ESPToolProgressBar(output, size) as pbar:
+        with redirect_stdout_stderr(command) as stdout:
+            with ESPToolProgressBar(stdout, size) as pbar:
                 esptool.main(shlex.split(cmd), self.esp)
         log.debug(pbar.output)
         return pbar.output
@@ -375,8 +377,6 @@ class ESPToolModuleDirect(ESPToolModuleMain):
     Calls `esptool.main()` on initialisation to ensure the connection to the
     device is correctly initialised.
     """
-
-    name = "direct"
 
     def __init__(self, port: str, baud: int = 0):
         """Connect to the ESP32 device on the specified serial `port`."""
@@ -445,10 +445,12 @@ class ESPToolModuleDirect(ESPToolModuleMain):
             self.esp._port.close()  # type: ignore - esptool does not close the port
 
 
-methods = (ESPToolSubprocess, ESPToolModuleMain, ESPToolModuleDirect)
-
-esptool_methods: dict[str, type[ESPToolSubprocess]] = {
-    method.name: method for method in methods
+# We have three different implementations of the ESPTool interface
+# A map to select implementation by name
+esptool_methods: dict[str, type[ESPTool]] = {
+    "subprocess": ESPToolSubprocess,
+    "command": ESPToolModuleMain,
+    "direct": ESPToolModuleDirect,
 }
 
 
