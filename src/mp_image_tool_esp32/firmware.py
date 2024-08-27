@@ -17,16 +17,22 @@ firmware files.
 from __future__ import annotations
 
 from functools import cached_property
-from typing import Tuple
 
 from . import logger as log
-from .argtypes import MB
-from .firmware_file import Firmware, FirmwareDevice, FirmwareFile
-from .image_header import ImageHeader, check_image_hash, update_image
-from .partition_table import BOOTLOADER_SIZE, Part, PartitionTable
+from .argtypes import MB, B
+from .firmware_fileio import FirmwareDeviceIO, FirmwareFileIO
+from .image_header import ImageHeader
+from .partition_table import PartitionEntry, PartitionTable
+
+BLOCKSIZE = B  # Block size for erasing/writing regions of the flash storage
 
 
-class Esp32Image(Firmware):
+def is_device(filename: str) -> bool:
+    """Return `True` if `filename` is a serial device, else `False`."""
+    return filename.startswith("/dev/") or filename.startswith("COM")
+
+
+class Firmware:
     """A class to represent an open esp32 firmware: in an open file or
     flash storage on a serial-attached device. Includes a `File` object to read
     and write to the device or file. `esptool.py` is used to read and write to
@@ -34,6 +40,13 @@ class Esp32Image(Firmware):
 
     Provides methods to read/write and manipulate esp32 firmware and partition
     tables."""
+
+    filename: str
+    file: FirmwareFileIO | FirmwareDeviceIO
+    header: ImageHeader
+    bootloader: int
+    is_device: bool
+    BLOCKSIZE: int = BLOCKSIZE
 
     def __init__(
         self,
@@ -44,13 +57,21 @@ class Esp32Image(Firmware):
         reset_on_close: bool = True,
         check: bool = True,
     ) -> None:
-        super().__init__(
-            filename,
-            baud,
-            esptool_method=esptool_method,
-            reset_on_close=reset_on_close,
-            check=check,
+        self.filename = filename
+        self.file = (
+            FirmwareDeviceIO(
+                filename,
+                baud,
+                esptool_method=esptool_method,
+                reset_on_close=reset_on_close,
+                check=check,
+            )
+            if is_device(filename)
+            else FirmwareFileIO(filename)
         )
+        self.is_device = isinstance(self.file, FirmwareDeviceIO)
+        self.header = self.file.header
+        self.bootloader = self.file.bootloader
 
     @cached_property
     def size(self) -> int:
@@ -66,10 +87,18 @@ class Esp32Image(Firmware):
         table = PartitionTable.from_bytes(data, self.header.flash_size)
         return table
 
-    def _get_part(self, part: Part | str) -> Part:
+    def _get_part(self, part: PartitionEntry | str) -> PartitionEntry:
         if part == "bootloader":
-            return Part(b"", 0, -1, self.bootloader, BOOTLOADER_SIZE, b"bootloader", 0)
-        return part if isinstance(part, Part) else self.table.by_name(part)
+            return PartitionEntry(
+                b"",
+                0,
+                -1,
+                self.bootloader,
+                PartitionTable.BOOTLOADER_SIZE,
+                b"bootloader",
+                0,
+            )
+        return part if isinstance(part, PartitionEntry) else self.table.by_name(part)
 
     def _check_app_image(self, data: bytes, name: str) -> bool:
         """Check that `data` is a valid app image for this device/firmware."""
@@ -99,7 +128,7 @@ class Esp32Image(Firmware):
         with open(output, "wb") as fout:
             return fout.write(data.rstrip(b"\xff"))  # Remove trailing padding
 
-    def erase_part(self, part: Part | str, size: int = 0) -> None:
+    def erase_part(self, part: PartitionEntry | str, size: int = 0) -> None:
         """Erase blocks on partition `part`. Erase whole partition if
         `size` == 0."""
         part = self._get_part(part)
@@ -110,7 +139,7 @@ class Esp32Image(Firmware):
         size = min(size, part.size) if size else part.size
         f.erase(size)  # Bypass write() to erase the flash
 
-    def read_part(self, part: Part | str) -> bytes:
+    def read_part(self, part: PartitionEntry | str) -> bytes:
         """Return the contents of the `part` partition from `image` as `bytes"""
         part = self._get_part(part)
         if part.offset >= self.size:
@@ -119,7 +148,7 @@ class Esp32Image(Firmware):
         f.seek(part.offset)
         return f.read(part.size)
 
-    def write_part(self, part: Part | str, data: bytes) -> int:
+    def write_part(self, part: PartitionEntry | str, data: bytes) -> int:
         """Write contents of `data` into the `part` partition in `image`."""
         part = self._get_part(part)
         if part.type_name == "app" and not self._check_app_image(data, part.name):
@@ -132,8 +161,8 @@ class Esp32Image(Firmware):
                 f" is too small for data ({len(data):#x} bytes)."
             )
         skip_erase = (
-            # If this is the last partition of a firmware file, dont erase trailing blocks
-            isinstance(self.file, FirmwareFile)
+            # If the last partition of a firmware file, dont erase trailing blocks
+            isinstance(self.file, FirmwareFileIO)
             and part.offset + part.size > self.size
         )
         pad = 0
@@ -160,9 +189,9 @@ class Esp32Image(Firmware):
         f.seek(self.bootloader)
         return f.read()
 
-    def write_firmware(self, image: Esp32Image) -> int:
+    def write_firmware(self, image: Firmware) -> int:
         """Write firmware from `image` into this image."""
-        if not isinstance(self.file, FirmwareDevice):
+        if not isinstance(self.file, FirmwareDeviceIO):
             raise ValueError("Must flash firmware to a device.")
         src, dst = image.header, self.header
         if src.flash_size != dst.flash_size:
@@ -203,7 +232,8 @@ class Esp32Image(Firmware):
                 continue
             f.seek(part.offset)
             data = f.read(part.size)
-            size, calc_sha, stored_sha = check_image_hash(data)
+            header = ImageHeader.from_bytes(data)
+            size, calc_sha, stored_sha = header.check_image_hash(data)
             size += len(stored_sha)  # Include the stored hash in the size
             sha, stored = calc_sha.hex(), stored_sha.hex()
             log.debug(f"{part.name}: {size=}\n       {sha=}\n    {stored=})")
@@ -234,7 +264,7 @@ class Esp32Image(Firmware):
         data: bytes | bytearray,
         blocksize: int,
         pad_byte: bytes = b"\xff",
-    ) -> Tuple[bytes, int]:
+    ) -> tuple[bytes, int]:
         """Return the block of data containing `offset`."""
         start = (offset // blocksize) * blocksize
         end = min(start + blocksize, len(data))
@@ -247,8 +277,8 @@ class Esp32Image(Firmware):
         """Update the bootloader header and hash, if it has changed."""
         f = self.file
         f.seek(self.bootloader)
-        data = f.read(BOOTLOADER_SIZE)  # Read the whole bootloader image
-        data, new_hash_offset = update_image(self.header, data)
+        data = f.read(PartitionTable.BOOTLOADER_SIZE)  # Read the whole bootloader
+        data, new_hash_offset = self.header.update_image(data)
         # Instead of writing a whole new bootloader image, just update the
         # block containing the header and the block caontaining the hash
         f.seek(self.bootloader)

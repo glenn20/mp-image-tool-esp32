@@ -152,39 +152,40 @@ class ImageHeader(ImageHeaderStruct):
     def __repr__(self) -> str:
         return ctypes_repr(self) + f", ismodified={self.ismodified()}"
 
+    def get_image_size(self, data: bytes | bytearray) -> int:
+        """Return the size of the application or bootloader image in `data`."""
+        n = self.size
+        for _ in range(self.num_segments):  # Skip over each segment in the image
+            segment_size = int.from_bytes(data[n + 4 : n + 8], "little")
+            n += segment_size + 8
+        n += 1  # Allow for the checksum byte
+        n = (n + 0xF) & ~0xF  # Round up to a multiple of 16 bytes
+        return n
 
-def get_image_size(data: bytes | bytearray) -> int:
-    """Return the size of the application or bootloader image in `data`."""
-    hdr = ImageHeader.from_bytes(data)
-    n = hdr.size
-    for _ in range(hdr.num_segments):  # Skip over each segment in the image
-        segment_size = int.from_bytes(data[n + 4 : n + 8], "little")
-        n += segment_size + 8
-    n += 1  # Allow for the checksum byte
-    n = (n + 0xF) & ~0xF  # Round up to a multiple of 16 bytes
-    return n
+    def calculate_image_size_and_hash(
+        self, data: bytes | bytearray
+    ) -> tuple[int, bytes]:
+        """Check the sha256 hash at the end of the bootloader image data."""
+        n = self.get_image_size(data)
+        return n, hashlib.sha256(data[:n]).digest()
 
+    def check_image_hash(self, data: bytes | bytearray) -> Tuple[int, bytes, bytes]:
+        """Check the sha256 hash at the end of the bootloader image data."""
+        n, sha = self.calculate_image_size_and_hash(data)
+        return (
+            n,
+            sha,
+            bytes(data[n : n + len(sha)]),
+        )  # Return the calc and stored hashes
 
-def calculate_image_size_and_hash(data: bytes | bytearray) -> tuple[int, bytes]:
-    """Check the sha256 hash at the end of the bootloader image data."""
-    n = get_image_size(data)
-    return n, hashlib.sha256(data[:n]).digest()
-
-
-def check_image_hash(data: bytes | bytearray) -> Tuple[int, bytes, bytes]:
-    """Check the sha256 hash at the end of the bootloader image data."""
-    n, sha = calculate_image_size_and_hash(data)
-    return n, sha, bytes(data[n : n + len(sha)])  # Return the calc and stored hashes
-
-
-def update_image(hdr: ImageHeader, data: bytes | bytearray) -> Tuple[bytearray, int]:
-    """Update the bootloader hash, if it has changed."""
-    if isinstance(data, bytes):
-        data = bytearray(data)
-    # Write the updated header to the start of the bootloader
-    data[: hdr.size] = bytes(hdr)  # Write the updated header
-    size = 0
-    if hdr.hash_appended == 1:
-        size, sha = calculate_image_size_and_hash(data)
-        data[size : size + len(sha)] = sha
-    return data, size
+    def update_image(self, data: bytes | bytearray) -> Tuple[bytearray, int]:
+        """Update the bootloader hash, if it has changed."""
+        if isinstance(data, bytes):
+            data = bytearray(data)
+        # Write the updated header to the start of the bootloader
+        data[: self.size] = bytes(self)  # Write the updated header
+        size = 0
+        if self.hash_appended == 1:
+            size, sha = self.calculate_image_size_and_hash(data)
+            data[size : size + len(sha)] = sha
+        return data, size

@@ -60,7 +60,7 @@ class PartitionError(Exception):
         self.table = table
 
     def __str__(self) -> str:
-        return f"{super().__str__()}\n{self.table}" if self.table else super().__str__()
+        return super().__str__() + (f"\n{self.table}" if self.table else "")
 
 
 class PartTuple(NamedTuple):
@@ -100,12 +100,12 @@ def _make_table(
     )
 
 
-class Part(PartTuple):
+class PartitionEntry(PartTuple):
     @staticmethod
-    def from_bytes(data: bytes) -> Part:
+    def from_bytes(data: bytes) -> PartitionEntry:
         """Return a `Part` built from `data`, which is an entry in the partition
         table."""
-        return Part(*struct.unpack(PART_FMT, data))
+        return PartitionEntry(*struct.unpack(PART_FMT, data))
 
     def is_valid(self) -> bool:
         """Check if the partition is valid."""
@@ -132,7 +132,7 @@ class Part(PartTuple):
         return SUBTYPE_TO_NAME.get((self.type, self.subtype), str(self.subtype))
 
 
-class PartitionTable(List[Part]):
+class PartitionTable(List[PartitionEntry]):
     """A class to hold a list of partitions (`Part`) in a partition table."""
 
     max_size: int
@@ -144,19 +144,21 @@ class PartitionTable(List[Part]):
     FIRST_PART_OFFSET = FIRST_PART_OFFSET
     APP_PART_OFFSET = APP_PART_OFFSET
     OTADATA_SIZE = OTADATA_SIZE
+    APP_TYPE = NAME_TO_TYPE["app"]
+    DATA_TYPE = NAME_TO_TYPE["data"]
 
     def __init__(self, max_size: int = 0) -> None:
         self.max_size = max_size
 
-    def find(self, name: str) -> Part | None:
+    def find(self, name: str) -> PartitionEntry | None:
         return next((p for p in self if p.name == name), None)
 
-    def by_name(self, name: str) -> Part:
+    def by_name(self, name: str) -> PartitionEntry:
         if (p := self.find(name)) is None:
             raise PartitionError(f"Partition {name} not found.", self)
         return p
 
-    def by_subtype(self, subtype_name: str) -> Part:
+    def by_subtype(self, subtype_name: str) -> PartitionEntry:
         p = next((p for p in self if p.subtype_name == subtype_name), None)
         if not p:
             raise PartitionError(f"Partition {subtype_name} not found.", self)
@@ -186,9 +188,9 @@ class PartitionTable(List[Part]):
         is a partition table from an ESP32 firmware file or device."""
         table = PartitionTable(max_size)
         parts = takewhile(
-            Part.is_valid,
+            PartitionEntry.is_valid,
             (
-                Part.from_bytes(part)
+                PartitionEntry.from_bytes(part)
                 for part in (
                     data[i : i + PART_LEN] for i in range(0, len(data), PART_LEN)
                 )
@@ -235,7 +237,7 @@ class PartitionTable(List[Part]):
         return data
 
     @property
-    def app_part(self) -> Part:
+    def app_part(self) -> PartitionEntry:
         """Find the first app partition in the table."""
         part = next(filter(lambda p: p.type_name == "app", self), None)
         if not part:
@@ -280,7 +282,9 @@ class PartitionTable(List[Part]):
         size = size or (self.max_size - offset)
         type, subtype = SUBTYPES[subtype_name]
         label = name.encode().ljust(PART_NAME_LEN, b"\x00")
-        self.append(Part(PART_MAGIC, type, subtype, offset, size, label, flags))
+        self.append(
+            PartitionEntry(PART_MAGIC, type, subtype, offset, size, label, flags)
+        )
         self.sort(key=lambda p: p.offset)
 
     def resize_part(self, name: str, new_size: int) -> int:

@@ -22,8 +22,8 @@ from pathlib import Path
 from typing import List
 
 from . import logger as log
-from .image_file import Esp32Image
-from .partition_table import Part
+from .firmware import Firmware
+from .partition_table import PartitionEntry
 
 OTA_SIZE = 0x20  # The size of an OTA record in bytes (32 bytes)
 OTA_OFFSETS = (0, 0x1000)  # The offsets of the OTA records in the otadata partition
@@ -78,7 +78,7 @@ class OTAUpdater:
 
     def __init__(
         self,
-        image: Esp32Image,
+        image: Firmware,
         no_rollback: bool = False,
     ):
         self.image = image
@@ -91,7 +91,7 @@ class OTAUpdater:
         )
 
     @cached_property
-    def _ota_app_parts(self) -> List[Part]:
+    def _ota_app_parts(self) -> List[PartitionEntry]:
         """Return a list of all the `ota` app partitions sorted by subtype."""
         parts = sorted(  # "ota_0", "ota_1", ... partitions
             (p for p in self.image.table if p.type == 0 and 0x10 <= p.subtype < 0x20),
@@ -105,20 +105,20 @@ class OTAUpdater:
                 raise ValueError("OTA partition subtypes must be sequential.")
         return parts
 
-    def _ota_app_part(self, seq: int) -> Part:
+    def _ota_app_part(self, seq: int) -> PartitionEntry:
         """Return the `ota` app partition for a given sequence number."""
         ota_num = (seq - 1) % len(self._ota_app_parts) if seq > 0 else 0
         return self._ota_app_parts[ota_num]
 
-    def current(self) -> Part:
+    def current(self) -> PartitionEntry:
         """Return the current `ota` app firmware boot partition."""
         return self._ota_app_part(self.ota_sequence_number)
 
-    def get_next_update(self) -> Part:
+    def get_next_update(self) -> PartitionEntry:
         """Return the next available `ota` app firmware partition to be updated."""
         return self._ota_app_part(self.ota_sequence_number + 1)
 
-    def set_boot(self, part: Part) -> None:
+    def set_boot(self, part: PartitionEntry) -> None:
         """Set `part` as the next boot partition. `part` must an `ota` partition."""
         seq = (start := self.ota_sequence_number)  # Start with current sequence number
         while part != self._ota_app_part(seq):  # look for part in ota_parts
@@ -138,7 +138,7 @@ class OTAUpdater:
             raise ValueError("Failed to write OTA data to otadata partition.")
 
 
-def ota_update(image: Esp32Image, firmware: str, no_rollback: bool = False) -> None:
+def ota_update(image: Firmware, firmware: str, no_rollback: bool = False) -> None:
     """Update the app firmware on an OTA-enabled esp32 device over the serial
     interface.
 
