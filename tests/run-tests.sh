@@ -60,7 +60,7 @@ while [ $# -gt 0 ]; do
             shift
             ;;
         *)
-            args="$args $arg"
+            args="$args $1"
             ;;
     esac
     shift
