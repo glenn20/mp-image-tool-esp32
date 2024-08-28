@@ -158,6 +158,11 @@ class ImageHeader(ImageHeaderStruct):
         for _ in range(self.num_segments):  # Skip over each segment in the image
             segment_size = int.from_bytes(data[n + 4 : n + 8], "little")
             n += segment_size + 8
+            if n >= len(data):
+                raise ValueError(
+                    f"Invalid image file: segment size ({segment_size} bytes) "
+                    f"exceeds image size ({len(data)} bytes)."
+                )
         n += 1  # Allow for the checksum byte
         n = (n + 0xF) & ~0xF  # Round up to a multiple of 16 bytes
         return n
@@ -176,7 +181,7 @@ class ImageHeader(ImageHeaderStruct):
             n,
             sha,
             bytes(data[n : n + len(sha)]),
-        )  # Return the calc and stored hashes
+        )  # Return the size, the calculated hash and the stored hash
 
     def update_image(self, data: bytes | bytearray) -> Tuple[bytearray, int]:
         """Update the bootloader hash, if it has changed."""
