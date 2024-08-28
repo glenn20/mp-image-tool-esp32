@@ -20,7 +20,7 @@ from functools import cached_property
 
 from . import logger as log
 from .argtypes import MB, B
-from .firmware_fileio import FirmwareDeviceIO, FirmwareFileIO
+from .firmware_fileio import FirmwareDeviceIO, FirmwareFileIO, Partition
 from .image_header import ImageHeader
 from .partition_table import PartitionEntry, PartitionTable
 
@@ -100,7 +100,11 @@ class Firmware:
             )
         return part if isinstance(part, PartitionEntry) else self.table.by_name(part)
 
-    def _check_app_image(self, data: bytes, name: str) -> bool:
+    def partition(self, part: PartitionEntry | str) -> Partition:
+        """Return a `Partition` object for the partition `part`."""
+        return Partition(self._get_part(part), self.file)
+
+    def check_app_image_header(self, data: bytes, name: str) -> bool:
         """Check that `data` is a valid app image for this device/firmware."""
         try:
             header = ImageHeader.from_bytes(data)
@@ -123,65 +127,10 @@ class Firmware:
         return True
 
     def save_app_image(self, output: str) -> int:
-        """Read the app image from the device and write it to a file."""
-        data = self.read_part(self.table.app_part)
-        with open(output, "wb") as fout:
-            return fout.write(data.rstrip(b"\xff"))  # Remove trailing padding
-
-    def erase_part(self, part: PartitionEntry | str, size: int = 0) -> None:
-        """Erase blocks on partition `part`. Erase whole partition if
-        `size` == 0."""
-        part = self._get_part(part)
-        if part.offset >= self.size:
-            return
-        f = self.file
-        f.seek(part.offset)
-        size = min(size, part.size) if size else part.size
-        f.erase(size)  # Bypass write() to erase the flash
-
-    def read_part(self, part: PartitionEntry | str) -> bytes:
-        """Return the contents of the `part` partition from `image` as `bytes"""
-        part = self._get_part(part)
-        if part.offset >= self.size:
-            raise ValueError(f"Partition '{part.name}' is outside image.")
-        f = self.file
-        f.seek(part.offset)
-        return f.read(part.size)
-
-    def write_part(self, part: PartitionEntry | str, data: bytes) -> int:
-        """Write contents of `data` into the `part` partition in `image`."""
-        part = self._get_part(part)
-        if part.type_name == "app" and not self._check_app_image(data, part.name):
-            raise ValueError(f"Attempt to write invalid app image to '{part.name}'.")
-        if part.offset >= self.size:
-            raise ValueError(f"Partition '{part.name}' is outside image.")
-        if part.size < len(data):
-            raise ValueError(
-                f"Partition '{part.name}' ({part.size:#x} bytes)"
-                f" is too small for data ({len(data):#x} bytes)."
-            )
-        skip_erase = (
-            # If the last partition of a firmware file, dont erase trailing blocks
-            isinstance(self.file, FirmwareFileIO)
-            and part.offset + part.size > self.size
-        )
-        pad = 0
-        if not skip_erase:
-            remainder = len(data) % self.BLOCKSIZE
-            pad = self.BLOCKSIZE - remainder if remainder else 0
-
-        f = self.file
-        f.seek(part.offset)
-        n = f.write(data + b"\xff" * pad)  # Write the data and pad with 0xff
-        if n < len(data) + pad:
-            raise ValueError(f"Failed to write {len(data)} bytes to '{part.name}'.")
-        if n < part.size:
-            if skip_erase:
-                f.truncate()  # Truncate the file to the new size
-            else:
-                log.action("Erasing remainder of partition...")
-                f.erase(part.size - n - pad)  # Erase remaining blocks
-        return n
+        """Read the first app image from the device and write it to a file."""
+        with self.partition(self.table.app_part) as p:
+            with open(output, "wb") as fout:
+                return fout.write(p.read().rstrip(b"\xff"))  # Remove trailing padding
 
     def read_firmware(self) -> bytes:
         """Return the entire firmware from this image as `bytes"""
@@ -215,23 +164,23 @@ class Firmware:
         self, new_table: PartitionTable, check_hash: bool = False
     ) -> None:
         """Check that the app partitions contain valid app image signatures."""
-        f = self.file
         app_parts = [
             p for p in new_table if p.type_name == "app" and p.offset < self.size
         ]
         app_parts = [self._get_part("bootloader")] + app_parts
         for part in app_parts:
             # Check there is an app at the start of the partition
-            f.seek(part.offset)
-            data = f.read(self.BLOCKSIZE)
-            if not self._check_app_image(data, part.name):
-                log.warning(f"Partition '{part.name}': App image signature not found.")
-                continue
-            log.info(f"Partition '{part.name}': App image signature found.")
-            if not check_hash:
-                continue
-            f.seek(part.offset)
-            data = f.read(part.size)
+            with self.partition(part) as p:
+                data = p.read(self.BLOCKSIZE)
+                if not self.check_app_image_header(data, part.name):
+                    log.warning(
+                        f"Partition '{part.name}': App image signature not found."
+                    )
+                    continue
+                log.info(f"Partition '{part.name}': App image signature found.")
+                if not check_hash:
+                    continue
+                data += p.read()  # Read the rest of the partition
             header = ImageHeader.from_bytes(data)
             size, calc_sha, stored_sha = header.check_image_hash(data)
             size += len(stored_sha)  # Include the stored hash in the size
@@ -256,9 +205,10 @@ class Firmware:
                 continue
             if newp.type_name == "data" and oldp != newp and newp.offset < self.size:
                 log.action(f"Erasing data partition: {newp.name}...")
-                self.erase_part(newp, min(newp.size, 4 * self.BLOCKSIZE))
+                with self.partition(newp) as p:
+                    p.erase(min(newp.size, 4 * self.BLOCKSIZE))
 
-    def get_block(
+    def _get_block(
         self,
         offset: int,
         data: bytes | bytearray,
@@ -275,18 +225,18 @@ class Firmware:
 
     def update_bootloader(self) -> None:
         """Update the bootloader header and hash, if it has changed."""
-        f = self.file
-        f.seek(self.bootloader)
-        data = f.read(PartitionTable.BOOTLOADER_SIZE)  # Read the whole bootloader
-        data, new_hash_offset = self.header.update_image(data)
-        # Instead of writing a whole new bootloader image, just update the
-        # block containing the header and the block caontaining the hash
-        f.seek(self.bootloader)
-        f.write(data[: self.BLOCKSIZE])  # Write the block with the new header
-        if new_hash_offset:  # If a new hash was written
-            block, start = self.get_block(new_hash_offset, data, self.BLOCKSIZE)
-            f.seek(self.bootloader + start)
-            f.write(block)  # Write the block with the new hash
+        with self.partition("bootloader") as p:
+            data = p.read()  # Read the whole bootloader
+            data, _new_hash_offset = self.header.update_image(data)
+            # Instead of writing a whole new bootloader image, just update the
+            # block containing the header and the block containing the hash
+            p.seek(0)
+            p.write(data)  # Write the block with the new header
+            # p.write(data[: self.BLOCKSIZE])  # Write the block with the new header
+            # if new_hash_offset:  # If a new hash was written
+            #     block, start = self._get_block(new_hash_offset, data, self.BLOCKSIZE)
+            #     p.seek(start)
+            #     p.write(block)  # Write the block with the new hash
 
     def write_table(self, table: PartitionTable) -> None:
         """Write a new `PartitionTable` to the flash storage or firmware file."""

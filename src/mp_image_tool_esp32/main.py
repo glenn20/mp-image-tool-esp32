@@ -284,8 +284,8 @@ def run_commands(argv: Sequence[str] | None = None) -> None:
     if args.erase:  # --erase NAME1[,NAME2,...] : Erase partition
         for name, *_ in args.erase:
             log.action(f"Erasing partition '{name}'...")
-            part = firmware.table.by_name(name)
-            firmware.erase_part(part)
+            with firmware.partition(name) as p:
+                p.erase()
 
     if args.erase_fs:  # --erase-fs NAME1[,...] : Erase first 4 blocks of parts
         if not firmware.is_device:
@@ -296,18 +296,27 @@ def run_commands(argv: Sequence[str] | None = None) -> None:
             if part.subtype_name not in ("fat",):
                 raise PartitionError(f"partition '{part.name}' is not a fs partition.")
             log.action(f"Erasing filesystem on partition '{part.name}'...")
-            firmware.erase_part(part, 4 * 0x1000)
+            with firmware.partition(part) as p:
+                p.erase(4 * 0x1000)
 
     if args.read:  # --read NAME1=FILE1[,...]: Read contents of parts into FILES
         for name, filename in args.read:
             log.action(f"Saving partition '{name}' into '{filename}'...")
-            n = Path(filename).write_bytes(firmware.read_part(name))
+            n = Path(filename).write_bytes(firmware.partition(name).read())
             log.info(f"Wrote {n:#x} bytes to '{filename}'.")
 
     if args.write:  # --write NAME1=FILE1[,...] : Write FILES into partitions
         for name, filename in args.write:
             log.action(f"Writing partition '{name}' from '{filename}'...")
-            n = firmware.write_part(name, Path(filename).read_bytes())
+            data = Path(filename).read_bytes()
+            with firmware.partition(name) as p:
+                if p.part.type_name == "app" and not firmware.check_app_image_header(
+                    data, p.part.name
+                ):
+                    raise ValueError(
+                        f"Attempt to write invalid app image to '{p.part.name}'."
+                    )
+                n = p.write(data)
             log.info(f"Wrote {n:#x} bytes to partition '{name}'.")
 
     if args.ota_update:  # --ota-update FILE : Perform an OTA firmware upgrade
