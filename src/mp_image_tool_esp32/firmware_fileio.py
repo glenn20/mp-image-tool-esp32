@@ -25,7 +25,7 @@ from . import logger as log
 from .argtypes import MB
 from .esptool_io import BLOCKSIZE, ESPTool, get_esptool
 from .image_header import ImageHeader
-from .partition_table import PartitionError
+from .partition_table import PartitionEntry, PartitionError
 
 # Bootloader offsets for esp32 devices, indexed by chip name
 # Offset is zero for all devices except esp32 and esp32s2
@@ -42,6 +42,7 @@ class FirmwareFileIO(io.BufferedRandom):
 
     header: ImageHeader
     bootloader: int
+    size: int
     BLOCKSIZE: int = BLOCKSIZE
 
     def __init__(self, name: str):
@@ -49,8 +50,9 @@ class FirmwareFileIO(io.BufferedRandom):
         f = open(name, "r+b")
         self.header = ImageHeader.from_file(f)
         self.header.check()  # Raise an exception for invalid headers
-        f.seek(0)  # Reset file position
         self.bootloader = BOOTLOADER_OFFSET[self.header.chip_name]
+        self.size = f.seek(0, 2) + self.bootloader
+        f.seek(0)  # Reset file position
         super().__init__(f.detach())
 
     def seek(self, pos: int, whence: int = 0) -> int:
@@ -82,6 +84,7 @@ class FirmwareDeviceIO(BinaryIO):
     flash_size: int
     header: ImageHeader
     bootloader: int
+    size: int
     BLOCKSIZE: int = BLOCKSIZE
 
     def __init__(
@@ -98,14 +101,15 @@ class FirmwareDeviceIO(BinaryIO):
         self.esptool = get_esptool(port, baud, method=esptool_method)
         self.chip_name = self.esptool.chip_name
         self.flash_size = self.esptool.flash_size
+        self.size = self.flash_size
+        self._pos: int = 0
+        self._end: int = self.flash_size
+        self._reset_on_close: bool = reset_on_close
         self.bootloader = BOOTLOADER_OFFSET[self.chip_name]
         self.seek(self.bootloader)
         # Check the bootloader header matches the detected device
         self.header = ImageHeader.from_file(self)
         self.seek(self.bootloader)
-        self._pos: int = 0
-        self._end: int = self.flash_size
-        self._reset_on_close: bool = reset_on_close
         if not check:
             return  # Skip checking the bootloader header
 
@@ -128,6 +132,9 @@ class FirmwareDeviceIO(BinaryIO):
                 "  Use the '-f' option to change the size in the bootloader."
             )
 
+    def __enter__(self) -> FirmwareDeviceIO:
+        return self
+
     def read(self, size: int | None = None) -> bytes:
         size = size if size is not None else self._end - self._pos
         log.debug(f"Reading {size:#x} bytes from {self._pos:#x}...")
@@ -138,7 +145,7 @@ class FirmwareDeviceIO(BinaryIO):
         return data
 
     def write(self, data: Buffer) -> int:
-        data = memoryview(data).tobytes()
+        data = memoryview(data)
         log.debug(f"Writing {len(data):#x} bytes at position {self._pos:#x}...")
         size = self.esptool.write_flash(self._pos, data)
         self._pos += size
@@ -174,4 +181,112 @@ class FirmwareDeviceIO(BinaryIO):
         Size should be a multiple of `0x1000 (4096)`, the device block size"""
         log.debug(f"Erasing {size:#x} bytes at position {self._pos:#x}...")
         self.esptool.erase_flash(self._pos, size)
+        self._pos += size
+
+
+class Partition(BinaryIO):
+    """A file-like IO wrapper around a partition of an esp32 firmware file or
+    device. This allows the partition to be used as a file-like object for
+    reading and writing."""
+
+    part: PartitionEntry
+    file: FirmwareFileIO | FirmwareDeviceIO
+
+    def __init__(self, part: PartitionEntry, file: FirmwareFileIO | FirmwareDeviceIO):
+        self.file = file
+        self.part = part
+        self._pos: int = 0
+        if part.offset >= file.size:
+            raise ValueError(f"Partition '{part.name}' is not in firmware file.")
+
+    def __enter__(self) -> Partition:
+        return self
+
+    def seek(self, pos: int, whence: int = 0) -> int:
+        if whence == 0:  # Seek from start of file
+            pos += 0
+        elif whence == 1:  # Seek from current position...
+            pos += self._pos
+        elif whence == 2:  # Seek from end of file..
+            pos += self.part.size
+        else:
+            raise ValueError(f"Invalid whence value: {whence}")
+        if not 0 <= pos <= self.part.size:
+            raise OSError(
+                f"Attempt to seek outside partition {self.part.name} ({pos=:#x})."
+            )
+        self._pos = pos
+        return self._pos
+
+    def tell(self) -> int:
+        return self._pos
+
+    def read(self, size: int | None = None) -> bytes:
+        pos = self._pos
+        if size is None or pos + size > self.part.size:
+            size = self.part.size - pos
+        self.file.seek(self.part.offset + pos)
+        b = self.file.read(size)
+        self._pos += len(b)
+        return b
+
+    def write(self, data: Buffer) -> int:
+        data = memoryview(data)
+        pos, size = self._pos, len(data)
+        if not 0 <= pos + size <= self.part.size:
+            raise OSError(
+                f"Attempt to write outside partition {self.part.name} "
+                f"({pos=:#x} {size=:#x})."
+            )
+        skip_erase = (
+            # If the last partition of a firmware file, dont erase trailing blocks
+            isinstance(self.file, FirmwareFileIO)
+            and self.part.offset + self.part.size > self.file.size
+        )
+        pad = 0
+        if not skip_erase:
+            remainder = len(data) % self.file.BLOCKSIZE
+            pad = self.file.BLOCKSIZE - remainder if remainder else 0
+
+        self.file.seek(self.part.offset + pos)
+        n = self.file.write(
+            bytes(data) + b"\xff" * pad
+        )  # Write the data and pad with 0xff
+        if n < len(data) + pad:
+            raise ValueError(
+                f"Failed to write {len(data)} bytes to '{self.part.name}'."
+            )
+        self._pos += n
+        if self._pos < self.part.size:
+            if skip_erase:
+                self.file.truncate()  # Truncate the file to the new size
+            else:
+                log.action("Erasing remainder of partition '{self.part.name}'...")
+                self.erase()  # Erase remaining blocks
+        return n
+
+    def close(self) -> None:
+        self._pos = 0
+
+    def readable(self) -> bool:
+        return True
+
+    def seekable(self) -> bool:
+        return True
+
+    # Add an `erase` method
+    def erase(self, size: int | None = None) -> None:
+        """Erase a region of the device flash storage using `esptool.py`.
+        Size should be a multiple of `0x1000 (4096)`, the device block size"""
+        pos = self._pos
+        if not size or pos + size > self.part.size:
+            size = self.part.size - pos
+        if not 0 <= pos + size <= self.part.size:
+            raise OSError(
+                f"Attempt to erase outside partition {self.part.name} "
+                f"({pos=:#x} {size=:#x})."
+            )
+        log.debug(f"Erasing {size:#x} bytes at position {pos:#x}...")
+        self.file.seek(self.part.offset + pos)
+        self.file.erase(size)
         self._pos += size
