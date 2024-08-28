@@ -40,7 +40,8 @@ class TypedArgumentParser:
         self.parser = parser
         self.typed_namespace = typed_namespace
         # The type hints for the arguments are in the `typed_namespace`
-        self.argument_types = get_type_hints(typed_namespace)
+        globalns = getattr(typed_namespace, "_globals", {})
+        self.argument_types = get_type_hints(typed_namespace, globalns)
         # `typed_namespace` may also contain a type conversion function for some types
         self.type_conversions = getattr(typed_namespace, "_type_conversions", {})
 

@@ -10,6 +10,8 @@ Dependencies:
 - `esptool.py` for access to flash storage on serial-attached ESP32 devices.
 """
 
+from __future__ import annotations
+
 import argparse
 import copy
 import os
@@ -19,6 +21,7 @@ import shutil
 import sys
 import traceback
 from pathlib import Path
+from typing import Sequence
 
 from . import __version__, argtypes, layouts, ota_update
 from . import logger as log
@@ -72,6 +75,7 @@ class TypedNamespace(argparse.Namespace):
         PartList: argtypes.partlist,  # Convert str to a list of Part tuples.
         ArgList: argtypes.arglist,  # Convert str to a list[list[str]].
     }
+    _globals = globals()  # Used to access the module's global variables.
 
 
 # Remember to add any new arguments here to TypedNamespace above as well.
@@ -143,7 +147,7 @@ def expand_device_short_names(name: str) -> str:
     return name
 
 
-def run_commands() -> None:
+def run_commands(argv: Sequence[str] | None = None) -> None:
     namespace = TypedNamespace()
     parser = typed_parser(usage, namespace)
     args = parser.parse_args(namespace=namespace)
