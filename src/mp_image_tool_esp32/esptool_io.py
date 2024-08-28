@@ -39,6 +39,7 @@ import esptool.cmds
 import esptool.util
 import tqdm
 from colorama import Fore
+from typing_extensions import Buffer
 
 from . import logger as log
 from .argtypes import KB, MB, B
@@ -71,7 +72,7 @@ class ESPTool(ABC):
         ...
 
     @abstractmethod
-    def write_flash(self, pos: int, data: bytes) -> int:
+    def write_flash(self, pos: int, data: Buffer) -> int:
         """Write `data` to the device flash storage at position `pos`."""
         ...
 
@@ -318,7 +319,8 @@ class ESPToolSubprocess(ESPTool):
         return esptool_subprocess(cmd, size=size)
 
     @check_alignment
-    def write_flash(self, pos: int, data: bytes) -> int:
+    def write_flash(self, pos: int, data: Buffer) -> int:
+        data = memoryview(data)
         with NamedTemporaryFile("w+b", prefix="mp-image-tool-esp32-") as f:
             f.write(data)
             f.flush()
@@ -400,7 +402,7 @@ class ESPToolModuleDirect(ESPToolModuleMain):
             raise ValueError("Could not detect flash size.")
 
     @check_alignment
-    def write_flash(self, pos: int, data: bytes) -> int:
+    def write_flash(self, pos: int, data: Buffer) -> int:
         # esptool cmds require an argparse-like args object. We use the Dictargs
         # class to mockup the required arguments for `write_flash()`
         # Unfortunately esptool doesn't provide a lower-level API for writing
@@ -415,6 +417,7 @@ class ESPToolModuleDirect(ESPToolModuleMain):
             compress=True,
             addr_filename=((pos, io.BytesIO(data)),),
         )
+        data = memoryview(data)
         with redirect_stdout_stderr("esptool_write_flash") as output:
             with ESPToolProgressBar(output, len(data)) as pbar:
                 esptool.cmds.write_flash(self.esp, args)
