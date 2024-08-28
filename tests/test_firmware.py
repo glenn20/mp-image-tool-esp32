@@ -4,9 +4,10 @@ import platform
 import re
 from pathlib import Path
 
+import pytest
 import yaml
 
-from .conftest import mpi_run, striplines
+from .conftest import assert_output, mpi_run, options
 
 rootdir = Path(__file__).parent.parent
 test_outputs = rootdir / "tests" / "test_outputs.yaml"
@@ -17,13 +18,13 @@ with open(test_outputs) as f:
 
 def mpi_check(firmware: Path, args: str) -> None:
     output = mpi_run(firmware, args)
-    assert striplines(OUTPUTS[args]) in striplines(output)
+    assert_output(OUTPUTS[args], output)
 
 
 def mpi_check_output(firmware: Path, args: str) -> None:
     mpi_run(firmware, args)
     output = mpi_run(firmware)
-    assert striplines(OUTPUTS[args]) in striplines(output)
+    assert_output(OUTPUTS[args], output)
 
 
 def test_python_version(firmware: Path):
@@ -61,8 +62,16 @@ def test_add(firmware: Path):
     mpi_check_output(firmware, "--resize vfs=1M --add data=fat:50B")
 
 
-# def test_flash_size(firmware: Path):
-#     mpi_check_output(firmware, "--flash-size 8M")
+def test_flash_size(firmware: Path):
+    if options.device:
+        pytest.skip("Skipping test_flash_size because --device is set")
+    mpi_check_output(firmware, "--flash-size 8M")
+
+
+def test_flash_size_vfs(firmware: Path):
+    if options.device:
+        pytest.skip("Skipping test_flash_size because --device is set")
+    mpi_check_output(firmware, "--flash-size 8M --resize vfs=0")
 
 
 def test_read(firmware: Path, bootloader: bytes):

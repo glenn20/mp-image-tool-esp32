@@ -14,6 +14,14 @@
     factory          app      factory     0x10000   0x1f0000   0x200000   0x0   (1.9 MB)
     vfs              data     fat        0x200000   0x200000   0x400000   0x0   (2.0 MB)
 
+--flash-size 8M --resize vfs=0: |
+  Partition table (flash size: 8MB):
+  # Name             Type     SubType      Offset       Size        End Flags
+    nvs              data     nvs          0x9000     0x6000     0xf000   0x0  (24.0 kB)
+    phy_init         data     phy          0xf000     0x1000    0x10000   0x0   (4.0 kB)
+    factory          app      factory     0x10000   0x1f0000   0x200000   0x0   (1.9 MB)
+    vfs              data     fat        0x200000   0x600000   0x800000   0x0   (6.0 MB)
+
 --table ota --app-size 0x1f0B: |
   Partition table (flash size: 4MB):
   # Name             Type     SubType      Offset       Size        End Flags

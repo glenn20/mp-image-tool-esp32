@@ -198,6 +198,14 @@ def striplines(output: str) -> str:
     return re.sub(r"\s*\n\s*", r"\n", output.strip())
 
 
+def check_output(expected: str, output: str) -> bool:
+    return striplines(expected) in striplines(output)
+
+
+def assert_output(expected: str, output: str) -> bool:
+    return striplines(expected) in striplines(output)
+
+
 @pytest.fixture
 def firmware(device_init: Path | None, firmwarefile: Path) -> Path:
     """Returns a firmware file to use for testing as a Path instance.
@@ -206,10 +214,11 @@ def firmware(device_init: Path | None, firmwarefile: Path) -> Path:
     Otherwise, a default firmware file is returned."""
     if device_init:
         # Write a default partition table on the device if necessary
-        if striplines(expected_partition_table) in striplines(mpi_last_output):
+        if check_output(expected_partition_table, mpi_last_output):
             return device_init
-        elif striplines(expected_partition_table) in striplines(
-            mpi_run(device_init, "--flash-size 4M --table original")
+        elif check_output(
+            expected_partition_table,
+            mpi_run(device_init, "--flash-size 4M --table original"),
         ):
             return device_init
         else:
