@@ -218,7 +218,10 @@ class PartitionTable(List[PartitionEntry]):
         table.sort(key=lambda p: p.offset)
         if not table.max_size:  # Infer flash size from partition table
             table.max_size = table[-1].offset + table[-1].size
-        table.check()
+        try:
+            table.check()
+        except PartitionError as e:
+            log.warning(f"Warning: {e}")
         return table
 
     def to_bytes(self) -> bytes:
