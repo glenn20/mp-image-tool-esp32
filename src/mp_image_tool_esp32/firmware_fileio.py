@@ -67,7 +67,7 @@ class FirmwareFileIO(io.BufferedRandom):
 
     # Add an `erase` method
     def erase(self, size: int) -> None:
-        """Erase a region of the device flash storage using `esptool.py`.
+        """Erase a region of the device flash storage.
         Size should be a multiple of `0x1000 (4096)`, the device block size"""
         log.debug(f"Erasing {size:#x} bytes at position {self.tell():#x}...")
         self.write(b"\xff" * size)
@@ -198,11 +198,13 @@ class Partition(BinaryIO):
         self._pos: int = 0
         if part.offset >= file.size:
             raise ValueError(f"Partition '{part.name}' is not in firmware file.")
+        self.seek(0)
 
     def __enter__(self) -> Partition:
         return self
 
     def seek(self, pos: int, whence: int = 0) -> int:
+        name = self.part.name
         if whence == 0:  # Seek from start of file
             pos += 0
         elif whence == 1:  # Seek from current position...
@@ -210,12 +212,11 @@ class Partition(BinaryIO):
         elif whence == 2:  # Seek from end of file..
             pos += self.part.size
         else:
-            raise ValueError(f"Invalid whence value: {whence}")
+            raise ValueError(f"Partition '{name}': Invalid whence value: {whence}")
         if not 0 <= pos <= self.part.size:
-            raise OSError(
-                f"Attempt to seek outside partition {self.part.name} ({pos=:#x})."
-            )
+            raise ValueError(f"Partition '{name}': Invalid seek: ({pos=:#x}).")
         self._pos = pos
+        self.file.seek(self.part.offset + pos)
         return self._pos
 
     def tell(self) -> int:
@@ -225,18 +226,20 @@ class Partition(BinaryIO):
         pos = self._pos
         if size is None or pos + size > self.part.size:
             size = self.part.size - pos
-        self.file.seek(self.part.offset + pos)
         b = self.file.read(size)
         self._pos += len(b)
         return b
 
     def write(self, data: Buffer) -> int:
         data = memoryview(data)
-        pos, size = self._pos, len(data)
+        pos, size, name = self._pos, len(data), self.part.name
         if not 0 <= pos + size <= self.part.size:
-            raise OSError(
-                f"Attempt to write outside partition {self.part.name} "
-                f"({pos=:#x} {size=:#x})."
+            raise ValueError(
+                f"Partition '{name}': Invalid write ({pos=:#x} {size=:#x})."
+            )
+        if pos % self.file.BLOCKSIZE != 0:
+            raise ValueError(
+                f"Partition '{name}': Write not block aligned ({pos=:#x})."
             )
         skip_erase = (
             # If the last partition of a firmware file, dont erase trailing blocks
@@ -248,22 +251,31 @@ class Partition(BinaryIO):
             remainder = len(data) % self.file.BLOCKSIZE
             pad = self.file.BLOCKSIZE - remainder if remainder else 0
 
-        self.file.seek(self.part.offset + pos)
-        n = self.file.write(
-            bytes(data) + b"\xff" * pad
-        )  # Write the data and pad with 0xff
-        if n < len(data) + pad:
-            raise ValueError(
-                f"Failed to write {len(data)} bytes to '{self.part.name}'."
-            )
-        self._pos += n
-        if self._pos < self.part.size:
-            if skip_erase:
-                self.file.truncate()  # Truncate the file to the new size
-            else:
-                log.action("Erasing remainder of partition '{self.part.name}'...")
-                self.erase()  # Erase remaining blocks
-        return n
+        self.seek(pos)
+        res = self.file.write(b"" + data + b"\xff" * pad)  # Write data: pad with 0xff
+        res -= pad  # Subtract the padding from the write length
+        if res != size:
+            raise ValueError(f"Partition {name}: Write failed: ({size=:#x} {res=:#x}.")
+        self._pos += res
+        return res
+
+    def truncate(self, size: int | None = None) -> int:
+        size = size if size is not None else self._pos
+        if (
+            isinstance(self.file, FirmwareFileIO)
+            and self.part.offset + self.part.size > self.file.size
+        ):
+            # If the last partition of a firmware file, dont erase trailing blocks
+            self.seek(size)
+            self.file.truncate()  # Truncate the file to the new size
+            return size
+        else:
+            nextblock = (size + self.file.BLOCKSIZE - 1) // self.file.BLOCKSIZE
+            size = nextblock * self.file.BLOCKSIZE
+            self.seek(size)  # Seek to the next block
+            log.action(f"Erasing remainder of partition '{self.part.name}'...")
+            self.file.erase(self.part.size - size)
+            return size
 
     def close(self) -> None:
         self._pos = 0

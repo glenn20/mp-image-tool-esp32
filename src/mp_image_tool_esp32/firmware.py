@@ -164,20 +164,18 @@ class Firmware:
         self, new_table: PartitionTable, check_hash: bool = False
     ) -> None:
         """Check that the app partitions contain valid app image signatures."""
-        app_parts = [
+        app_parts = [self._get_part("bootloader")] + [
             p for p in new_table if p.type_name == "app" and p.offset < self.size
         ]
-        app_parts = [self._get_part("bootloader")] + app_parts
         for part in app_parts:
-            # Check there is an app at the start of the partition
+            # Check there is an app header at the start of the partition
+            name = part.name
             with self.partition(part) as p:
                 data = p.read(self.BLOCKSIZE)
-                if not self.check_app_image_header(data, part.name):
-                    log.warning(
-                        f"Partition '{part.name}': App image signature not found."
-                    )
+                if not self.check_app_image_header(data, name):
+                    log.warning(f"Partition '{name}': App image signature not found.")
                     continue
-                log.info(f"Partition '{part.name}': App image signature found.")
+                log.info(f"Partition '{name}': App image signature found.")
                 if not check_hash:
                     continue
                 data += p.read()  # Read the rest of the partition
@@ -185,13 +183,13 @@ class Firmware:
             size, calc_sha, stored_sha = header.check_image_hash(data)
             size += len(stored_sha)  # Include the stored hash in the size
             sha, stored = calc_sha.hex(), stored_sha.hex()
-            log.debug(f"{part.name}: {size=}\n       {sha=}\n    {stored=})")
+            log.debug(f"{name}: {size=}\n       {sha=}\n    {stored=})")
             if sha != stored:
                 log.warning(
-                    f"Partition '{part.name}': Hash mismatch ({size=} {sha=} {stored=})"
+                    f"Partition '{name}': Hash mismatch ({size=} {sha=} {stored=})"
                 )
             else:
-                log.info(f"Partition '{part.name}': Hash confirmed ({size=}).")
+                log.info(f"Partition '{name}': Hash confirmed ({size=}).")
 
     def check_data_partitions(self, new_table: PartitionTable) -> None:
         """Erase any data partitions in `new_table` which have been moved or resized."""
@@ -227,16 +225,17 @@ class Firmware:
         """Update the bootloader header and hash, if it has changed."""
         with self.partition("bootloader") as p:
             data = p.read()  # Read the whole bootloader
-            data, _new_hash_offset = self.header.update_image(data)
+            data, new_hash_offset = self.header.update_image(data)
             # Instead of writing a whole new bootloader image, just update the
             # block containing the header and the block containing the hash
             p.seek(0)
-            p.write(data)  # Write the block with the new header
-            # p.write(data[: self.BLOCKSIZE])  # Write the block with the new header
-            # if new_hash_offset:  # If a new hash was written
-            #     block, start = self._get_block(new_hash_offset, data, self.BLOCKSIZE)
-            #     p.seek(start)
-            #     p.write(block)  # Write the block with the new hash
+            # p.write(data)  # Write the block with the new header
+            p.write(data[: self.BLOCKSIZE])  # Write the block with the new header
+            if new_hash_offset:  # If a new hash was written
+                block, start = self._get_block(new_hash_offset, data, self.BLOCKSIZE)
+                p.seek(start)
+                p.write(block)  # Write the block with the new hash
+            p.truncate()
 
     def write_table(self, table: PartitionTable) -> None:
         """Write a new `PartitionTable` to the flash storage or firmware file."""

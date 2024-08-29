@@ -285,7 +285,7 @@ def run_commands(argv: Sequence[str] | None = None) -> None:
         for name, *_ in args.erase:
             log.action(f"Erasing partition '{name}'...")
             with firmware.partition(name) as p:
-                p.erase()
+                p.truncate()
 
     if args.erase_fs:  # --erase-fs NAME1[,...] : Erase first 4 blocks of parts
         if not firmware.is_device:
@@ -317,6 +317,7 @@ def run_commands(argv: Sequence[str] | None = None) -> None:
                         f"Attempt to write invalid app image to '{p.part.name}'."
                     )
                 n = p.write(data)
+                p.truncate()
             log.info(f"Wrote {n:#x} bytes to partition '{name}'.")
 
     if args.ota_update:  # --ota-update FILE : Perform an OTA firmware upgrade
