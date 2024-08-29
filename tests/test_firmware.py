@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import platform
 import re
 from pathlib import Path
@@ -96,11 +97,17 @@ def test_write(firmware: Path):
 
 
 def test_erase(firmware: Path):
+    Path("input.bin").write_bytes(bytes(range(32)) * 8)
+    mpi_run(firmware, "--write phy_init=input.bin")
+    mpi_run(firmware, "--read phy_init=output1.bin")
     mpi_run(firmware, "--erase phy_init")
-    mpi_run(firmware, "--read phy_init=output.bin")
-    output = Path("output.bin").read_bytes()
-    assert len(output) == 4096
-    assert output.count(0xFF) == len(output)
+    mpi_run(firmware, "--read phy_init=output2.bin")
+    input = Path("input.bin").read_bytes()
+    output1 = Path("output1.bin").read_bytes()
+    output2 = Path("output2.bin").read_bytes()
+    assert output1.rstrip(b"\xFF") == input
+    assert len(output2) == 4096
+    assert output2.count(0xFF) == len(output2)
 
 
 def test_extract_app(firmware: Path, app_image: bytes):
@@ -120,3 +127,27 @@ def test_check_app(firmware: Path, app_image: bytes, bootloader: bytes):
         f"Partition 'factory': Hash confirmed (size={len(app_image)}).",
     ):
         assert line in output
+
+
+def test_file_integrity(firmware: Path):
+    if options.device:
+        pytest.skip("Skipping test_flash_size because --device is set")
+    sha1 = hashlib.sha256(firmware.read_bytes()).hexdigest()
+    mpi_run(firmware, "--flash-size 8M --resize vfs=0")
+    sha2 = hashlib.sha256(firmware.read_bytes()).hexdigest()
+    mpi_run(firmware, "--flash-size 4M --resize vfs=0")
+    sha3 = hashlib.sha256(firmware.read_bytes()).hexdigest()
+    assert sha1 != sha2
+    assert sha1 == sha3
+
+
+def test_read_write(firmware: Path):
+    if options.device:
+        pytest.skip("Skipping test_flash_size because --device is set")
+    sha1 = hashlib.sha256(firmware.read_bytes()).hexdigest()
+    mpi_run(firmware, "--read bootloader=bootloader.bin")
+    sha2 = hashlib.sha256(firmware.read_bytes()).hexdigest()
+    mpi_run(firmware, "--write bootloader=bootloader.bin")
+    sha3 = hashlib.sha256(firmware.read_bytes()).hexdigest()
+    assert sha1 == sha2
+    assert sha1 == sha3

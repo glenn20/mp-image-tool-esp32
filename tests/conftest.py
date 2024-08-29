@@ -171,7 +171,7 @@ def firmwarefile(testdir: Path) -> Path:
 
 
 @pytest.fixture(scope="session")
-def device_init() -> Path | None:
+def device() -> Path | None:
     """Fixture to produce an initialised ESP32 device (session scope).
     If the --flash option is given, a firmware is flashed to the device.
     The device is returned as a Path instance."""
@@ -207,23 +207,23 @@ def assert_output(expected: str, output: str) -> bool:
 
 
 @pytest.fixture
-def firmware(device_init: Path | None, firmwarefile: Path) -> Path:
+def firmware(device: Path | None, firmwarefile: Path) -> Path:
     """Returns a firmware file to use for testing as a Path instance.
     If the --device option is given, the returned Path will be a serial
     port connected to the ESP32 device.
     Otherwise, a default firmware file is returned."""
-    if device_init:
+    if device:
         # Write a default partition table on the device if necessary
         if check_output(expected_partition_table, mpi_last_output):
-            return device_init
+            return device
         elif check_output(
             expected_partition_table,
-            mpi_run(device_init, "--flash-size 4M --table original"),
+            mpi_run(device, "--flash-size 4M --table original"),
         ):
-            return device_init
+            return device
         else:
             pytest.exit(
-                f"Device {device_init} Partition table:\n"
+                f"Device {device} Partition table:\n"
                 f"{mpi_last_output}\n"
                 f"  does not match expected partition table:\n"
                 f"{expected_partition_table}"
