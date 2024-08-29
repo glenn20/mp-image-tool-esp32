@@ -28,6 +28,7 @@ from . import logger as log
 from .argparse_typed import parser as typed_parser
 from .argtypes import MB, ArgList, PartList
 from .firmware import Firmware
+from .firmware_fileio import FirmwareDeviceIO
 from .partition_table import PartitionError, PartitionTable
 
 
@@ -198,6 +199,14 @@ def run_commands(argv: Sequence[str] | None = None) -> None:
         return
 
     if args.flash_size:  # -f --flash-size SIZE : Set size of the flash storage
+        if (
+            isinstance(firmware.file, FirmwareDeviceIO)
+            and args.flash_size > firmware.file.flash_size
+        ):
+            raise ValueError(
+                "Selected flash size is larger than device flash size "
+                f"({args.flash_size // MB}MB > {firmware.file.flash_size // MB}MB)."
+            )
         if args.flash_size != firmware.header.flash_size:
             new_table.max_size = args.flash_size
             new_header.flash_size = args.flash_size

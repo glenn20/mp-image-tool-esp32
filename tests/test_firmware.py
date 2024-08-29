@@ -63,16 +63,25 @@ def test_add(firmware: Path):
     mpi_check_output(firmware, "--resize vfs=1M --add data=fat:50B")
 
 
+def mpi_check_output_flash_size(firmware: Path, args: str) -> bool:
+    output = mpi_run(firmware, args)
+    if "ValueError: Selected flash size is larger than device flash size" in output:
+        return False
+    output = mpi_run(firmware)
+    assert_output(OUTPUTS[args], output)
+    return True
+
+
 def test_flash_size(firmware: Path):
-    if options.device:
-        pytest.skip("Skipping test_flash_size because --device is set")
-    mpi_check_output(firmware, "--flash-size 8M")
+    if not mpi_check_output_flash_size(firmware, "--flash-size 8M"):
+        pytest.skip("Skipping test_flash_size because device flash size is too small")
 
 
 def test_flash_size_vfs(firmware: Path):
-    if options.device:
-        pytest.skip("Skipping test_flash_size because --device is set")
-    mpi_check_output(firmware, "--flash-size 8M --resize vfs=0")
+    if not mpi_check_output_flash_size(firmware, "--flash-size 8M --resize vfs=0"):
+        pytest.skip(
+            "Skipping test_flash_size_vfs because device flash size is too small"
+        )
 
 
 def test_read(firmware: Path, bootloader: bytes):
@@ -131,7 +140,7 @@ def test_check_app(firmware: Path, app_image: bytes, bootloader: bytes):
 
 def test_file_integrity(firmware: Path):
     if options.device:
-        pytest.skip("Skipping test_flash_size because --device is set")
+        pytest.skip("Skipping test_file_integrity because --device is set")
     sha1 = hashlib.sha256(firmware.read_bytes()).hexdigest()
     mpi_run(firmware, "--flash-size 8M --resize vfs=0")
     sha2 = hashlib.sha256(firmware.read_bytes()).hexdigest()
@@ -143,7 +152,7 @@ def test_file_integrity(firmware: Path):
 
 def test_read_write(firmware: Path):
     if options.device:
-        pytest.skip("Skipping test_flash_size because --device is set")
+        pytest.skip("Skipping test_read_write because --device is set")
     sha1 = hashlib.sha256(firmware.read_bytes()).hexdigest()
     mpi_run(firmware, "--read bootloader=bootloader.bin")
     sha2 = hashlib.sha256(firmware.read_bytes()).hexdigest()
