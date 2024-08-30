@@ -85,7 +85,7 @@ class OTAUpdater:
         self.no_rollback = no_rollback
         self.otadata_part = self.image.table.by_subtype("ota")
 
-        data = self.image.read_part(self.otadata_part)
+        data = self.image.partition(self.otadata_part).read()
         self.ota_sequence_number = max(
             ota_sequence_number(buf) for buf in (data[i:j] for i, j in OTA_RECORDS)
         )
@@ -134,8 +134,10 @@ class OTAUpdater:
             + ota_record(self.ota_sequence_number, OtaState.VALID)
             + b"\xff" * (0x1000 - OTA_SIZE)
         )
-        if self.image.write_part(self.otadata_part, data) != len(data):
-            raise ValueError("Failed to write OTA data to otadata partition.")
+        with self.image.partition(self.otadata_part) as p:
+            if p.write(data) != len(data):
+                raise ValueError("Failed to write OTA data to otadata partition.")
+            p.truncate()
 
 
 def ota_update(image: Firmware, firmware: str, no_rollback: bool = False) -> None:
@@ -157,7 +159,9 @@ def ota_update(image: Firmware, firmware: str, no_rollback: bool = False) -> Non
 
     new_part = ota.get_next_update()  # Get the next available OTA update partition
     log.action(f"Writing firmware to OTA partition {new_part.name}...")
-    image.write_part(new_part, Path(firmware).read_bytes())
+    with image.partition(new_part) as p:
+        p.write(Path(firmware).read_bytes())
+        p.truncate()
 
     log.action("Updating otadata partition...")
     ota.set_boot(new_part)
