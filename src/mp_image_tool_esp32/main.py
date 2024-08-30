@@ -26,7 +26,7 @@ from typing import Sequence
 from . import __version__, argtypes, layouts, ota_update
 from . import logger as log
 from .argparse_typed import parser as typed_parser
-from .argtypes import MB, ArgList, PartList
+from .argtypes import MB, ArgList, IntArg, PartList
 from .firmware import Firmware
 from .firmware_fileio import FirmwareDeviceIO
 from .partition_table import PartitionError, PartitionTable
@@ -55,12 +55,12 @@ class TypedNamespace(argparse.Namespace):
     no_reset: bool
     check_app: bool
     extract_app: bool
-    flash_size: int
-    app_size: int
+    flash_size: IntArg
+    app_size: IntArg
     method: str
     no_rollback: bool
     ota_update: str
-    baud: int
+    baud: IntArg
     from_csv: str
     table: PartList
     delete: ArgList
@@ -71,11 +71,6 @@ class TypedNamespace(argparse.Namespace):
     read: ArgList
     write: ArgList
     flash: str
-    _type_conversions = {  # Map types to funcs which return type from a string arg.
-        int: argtypes.numeric_arg,  # Convert str to an integer.
-        PartList: argtypes.partlist,  # Convert str to a list of Part tuples.
-        ArgList: argtypes.arglist,  # Convert str to a list[list[str]].
-    }
     _globals = globals()  # Used to access the module's global variables.
 
 
@@ -220,15 +215,15 @@ def run_commands(argv: Sequence[str] | None = None) -> None:
     if args.table:  # --table default|ota|nvs=7B,factory=2M,vfs=0
         if args.table == [("ota", "", 0, 0)]:
             # ota_layout returns a string, so parse it into a PartList
-            args.table = argtypes.partlist(layouts.ota_layout(new_table, args.app_size))
+            args.table = argtypes.PartList(layouts.ota_layout(new_table, args.app_size))
             extension += "-OTA"
         elif args.table == [("default", "", 0, 0)]:
             # DEFAULT_TABLE_LAYOUT is a string, so parse it into a PartList
-            args.table = argtypes.partlist(layouts.DEFAULT_TABLE_LAYOUT)
+            args.table = argtypes.PartList(layouts.DEFAULT_TABLE_LAYOUT)
             extension += "-DEFAULT"
         elif args.table == [("original", "", 0, 0)]:
             # DEFAULT_TABLE_LAYOUT is a string, so parse it into a PartList
-            args.table = argtypes.partlist(layouts.ORIGINAL_TABLE_LAYOUT)
+            args.table = argtypes.PartList(layouts.ORIGINAL_TABLE_LAYOUT)
             extension += "-ORIGINAL"
         else:
             extension += "-TABLE"
