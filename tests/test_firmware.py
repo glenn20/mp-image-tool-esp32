@@ -139,8 +139,8 @@ def test_check_app(firmware: Path, app_image: bytes, bootloader: bytes):
 
 
 def test_file_integrity(firmware: Path):
-    if options.device:
-        pytest.skip("Skipping test_file_integrity because --device is set")
+    if options.port:
+        pytest.skip("Skipping test_file_integrity because --port is set")
     sha1 = hashlib.sha256(firmware.read_bytes()).hexdigest()
     mpi_run(firmware, "--flash-size 8M --resize vfs=0")
     sha2 = hashlib.sha256(firmware.read_bytes()).hexdigest()
@@ -151,8 +151,8 @@ def test_file_integrity(firmware: Path):
 
 
 def test_read_write(firmware: Path):
-    if options.device:
-        pytest.skip("Skipping test_read_write because --device is set")
+    if options.port:
+        pytest.skip("Skipping test_read_write because --port is set")
     sha1 = hashlib.sha256(firmware.read_bytes()).hexdigest()
     mpi_run(firmware, "--read bootloader=bootloader.bin")
     sha2 = hashlib.sha256(firmware.read_bytes()).hexdigest()

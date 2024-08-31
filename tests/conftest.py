@@ -47,7 +47,7 @@ mpi_last_output: str = ""
 
 # Class to add type annotations for command line options
 class Options(Namespace):
-    device: str = ""
+    port: str = ""
     firmware: str = ""
     args: str = ""
     flash: bool = False
@@ -60,8 +60,8 @@ options: Options = Options()
 
 def pytest_addoption(parser: Namespace):
     parser.addoption(
-        "--device",
-        dest="device",
+        "--port",
+        dest="port",
         action="store",
         default="",
         help="Serial port for micropython board: u0, a0, c0",
@@ -183,9 +183,9 @@ def device() -> Path | None:
         name = re.sub(r"^c([0-9]+)$", r"COM\1", name)
         return name
 
-    if not options.device:
+    if not options.port:
         return None
-    device = Path(expand_device_short_names(options.device))
+    device = Path(expand_device_short_names(options.port))
     if options.flash:
         # Flash default firmware to the device
         mpi_run(firmware_file, "--flash", str(device))
