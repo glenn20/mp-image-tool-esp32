@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mp-image-tool-esp32"
-description = "Tool for manipulating micropython image files"
+description = "Tool for manipulating micropython ESP32 firmware files"
 readme = "README.md"
 authors = [{name = "glenn20", email = "6965319+glenn20@users.noreply.github.com"}]
 urls = {Homepage = "https://github.com/glenn20/mp-image-tool-esp32"}
@@ -12,6 +12,7 @@ license = {text = "MIT"}
 classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
     "Topic :: Software Development :: Embedded Systems",
 ]
 requires-python = ">=3.8"

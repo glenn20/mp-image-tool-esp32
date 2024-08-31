@@ -37,7 +37,9 @@ Micropython app fills 78.8% of factory partition (421 kB free)
 
 - Print a summary of the partition table of a micropython esp32 firmware file or
   device
-  - `mp-image-tool-esp32 ESP32_GENERIC-20231005-v1.21.0.bin`
+  - `mp-image-tool-esp32 ESP32_GENERIC-20231005-v1.21.0.bin` or
+  - `mp-image-tool-esp32 /dev/ttyUSB0` (Linux) or
+  - `mp-image-tool-esp32 COM1` (Windows)
 - Change the size of the flash storage for the firmware file:
   - `--resize-flash 8M` or `-f 8M`
 - Rewrite or modify the partition table:
@@ -124,21 +126,10 @@ cd mp-image-tool-esp32
 
 If you use a python virtual environment (recommended), make sure it is active.
 
-To use without installing:
+I recommend using [`uv`](https://docs.astral.sh/uv/) (`pip install uv`) to
+install and manage dependencies and dev environments.
 
-- Prerequisites (`esptool` and `colorama`):
-
-  ```bash
-  pip install -r requirements.txt
-  ```
-
-- Usage:
-
-  ```bash
-  ./mp-image-tool-esp32 ~/Downloads/ESP32_GENERIC-20231005-v1.21.0.bin
-  ```
-
-or, to install in your python environment:
+To install in your python environment:
 
 - Install in "editable mode":
 
@@ -149,8 +140,17 @@ or, to install in your python environment:
 - OR build and install a distributable `.whl` package
 
   ```bash
-  python -m build
-  pip install dist/mp_image_tool_esp32*.whl
+  uvx --from build pyproject-build --installer uv
+  pip install dist/mp_image_tool_esp32-0.0.5-py3-none-any.whl
+  ```
+
+  You may prefer to use `python -m build` to build the `.whl` files instead.
+
+- To run the tests:
+
+  ```bash
+  uv run pytest  # To run the tests
+  uv run tox  # Using `tox` to run the tests for multiple python versions
   ```
 
 ## Examples
