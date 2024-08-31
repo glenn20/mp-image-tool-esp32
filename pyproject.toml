@@ -15,16 +15,30 @@ classifiers = [
     "Topic :: Software Development :: Embedded Systems",
 ]
 requires-python = ">=3.8"
-dynamic = ["dependencies", "version"]
-
-[tool.hatch.version]
-path = "src/mp_image_tool_esp32/__init__.py"
+dynamic = ["version"]
+dependencies = [
+    "colorama>=0.4.0",
+    "esptool>=4.6.2",
+    "tqdm>=4.66.1",
+    "typing-extensions>=4.12",
+]
 
 [project.scripts]
 mp-image-tool-esp32 = "mp_image_tool_esp32.main:main"
+
+[tool.hatch.version]
+path = "src/mp_image_tool_esp32/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/mp_image_tool_esp32"]
 
 [tool.ruff]
-target-version = "py37"
+target-version = "py38"
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.3.2",
+    "pyyaml>=6.0.2",
+]
+
+[tool.uv.sources]

@@ -1,4 +1,0 @@
-colorama >= 0.4.0
-esptool >= 4.6.2
-tqdm >= 4.66.1
-typing-extensions >= 4.12
