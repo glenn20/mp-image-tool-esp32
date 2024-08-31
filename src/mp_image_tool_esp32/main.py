@@ -151,7 +151,7 @@ def run_commands(argv: Sequence[str] | None = None) -> None:
 
     log.setLevel("DEBUG" if args.debug else "WARNING" if args.quiet else "INFO")
     log.action(
-        f"Running {progname} {__version__} (Python {platform.python_version()})."
+        f"Running {progname} v{__version__} (Python {platform.python_version()})."
     )
 
     ## Open the firmware file or esp32 device

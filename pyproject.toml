@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
@@ -23,23 +23,23 @@ dependencies = [
     "typing-extensions>=4.12",
 ]
 
-[project.scripts]
+[project.scripts]  # The entry points for the command line tools
 mp-image-tool-esp32 = "mp_image_tool_esp32.main:main"
 
-[tool.hatch.version]
-path = "src/mp_image_tool_esp32/__init__.py"
-
-[tool.hatch.build.targets.wheel]
+[tool.hatch.build.targets.wheel]  # The src directory to bundle
 packages = ["src/mp_image_tool_esp32"]
 
-[tool.ruff]
-target-version = "py38"
+[tool.hatch.version]  # Get the version from git, eg: 0.0.6.dev0+g1234567
+source = "vcs"
+
+[tool.hatch.build.hooks.vcs]  # Write the version to a file
+version-file = "src/mp_image_tool_esp32/_version.py"
+
+[tool.setuptools_scm]
 
 [tool.uv]
-dev-dependencies = [
+dev-dependencies = [  # The dependencies for running tests
     "pytest>=8.3.2",
     "pyyaml>=6.0.2",
     "tox>=4.0.0",
 ]
-
-[tool.uv.sources]

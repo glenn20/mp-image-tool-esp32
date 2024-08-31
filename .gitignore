@@ -3,6 +3,7 @@
 /ota/
 /tests/data
 .python-version
+/src/mp_image_tool_esp32/_version.py
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
