@@ -79,13 +79,11 @@ class FirmwareDeviceIO(BinaryIO):
     writing. Uses `esptool.py` to read and write data to/from the attached
     device."""
 
-    esptool: ESPTool
-    chip_name: str
-    flash_size: int
     header: ImageHeader
     bootloader: int
     size: int
     BLOCKSIZE: int = BLOCKSIZE
+    esptool: ESPTool
 
     def __init__(
         self,
@@ -99,13 +97,11 @@ class FirmwareDeviceIO(BinaryIO):
         if not os.path.exists(port):
             raise FileNotFoundError(f"No such device: '{port}'")
         self.esptool = get_esptool(port, baud, method=esptool_method)
-        self.chip_name = self.esptool.chip_name
-        self.flash_size = self.esptool.flash_size
-        self.size = self.flash_size
+        self.size = self.esptool.flash_size
         self._pos: int = 0
-        self._end: int = self.flash_size
+        self._end: int = self.size
         self._reset_on_close: bool = reset_on_close
-        self.bootloader = BOOTLOADER_OFFSET[self.chip_name]
+        self.bootloader = BOOTLOADER_OFFSET[self.esptool.chip_name]
         self.seek(self.bootloader)
         # Check the bootloader header matches the detected device
         self.header = ImageHeader.from_file(self)
@@ -119,14 +115,17 @@ class FirmwareDeviceIO(BinaryIO):
                 "  Use '--flash' option to flash new firmware."
             )
         self.header.check()
-        if self.chip_name and self.chip_name != self.header.chip_name:
+        if self.esptool.chip_name and self.esptool.chip_name != self.header.chip_name:
             log.error(
-                f"Detected device chip type ({self.chip_name}) is "
+                f"Detected device chip type ({self.esptool.chip_name}) is "
                 f"different from firmware bootloader ({self.header.chip_name})."
             )
-        if self.flash_size and self.flash_size != self.header.flash_size:
+        if (
+            self.esptool.flash_size
+            and self.esptool.flash_size != self.header.flash_size
+        ):
             log.warning(
-                f"Detected flash size ({self.flash_size//MB}MB) is "
+                f"Detected flash size ({self.esptool.flash_size//MB}MB) is "
                 f"different from firmware bootloader "
                 f"({self.header.flash_size//MB}MB).\n"
                 "  Use the '-f' option to change the size in the bootloader."
