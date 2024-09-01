@@ -26,6 +26,10 @@ from .partition_table import PartitionEntry, PartitionTable
 
 BLOCKSIZE = B  # Block size for erasing/writing regions of the flash storage
 
+# The name of the fake partitions for the bootloader and partition table
+BOOTLOADER_NAME = "bootloader"
+PARTITIONTABLE_NAME = "partition_table"
+
 
 def is_device(filename: str) -> bool:
     """Return `True` if `filename` is a serial device, else `False`."""
@@ -80,22 +84,37 @@ class Firmware:
 
     @cached_property
     def table(self) -> PartitionTable:
-        """Load, check and return a `PartitionTable` from an `ESP32Image` object."""
-        fin = self.file
-        fin.seek(PartitionTable.PART_TABLE_OFFSET)
-        data = fin.read(PartitionTable.PART_TABLE_SIZE)
-        table = PartitionTable.from_bytes(data, self.header.flash_size)
-        return table
+        """Load, check and return a `PartitionTable` from an `ESP32Image`
+        object."""
+        return PartitionTable.from_bytes(
+            self.partition(PARTITIONTABLE_NAME).read(),
+            self.header.flash_size,
+        )
 
     def _get_part(self, part: PartitionEntry | str) -> PartitionEntry:
-        if part == "bootloader":
+        """Return a `PartitionEntry` object for the partition `part`.
+        `part` can be a `PartitionEntry` object or the name of a partition
+        or one of the special names `bootloader` and `partitiontable`."""
+        if part == BOOTLOADER_NAME:
+            # Return a fake partition entry for the bootloader
             return PartitionEntry(
                 b"",
                 0,
                 -1,
                 self.bootloader,
                 PartitionTable.BOOTLOADER_SIZE,
-                b"bootloader",
+                BOOTLOADER_NAME.encode(),
+                0,
+            )
+        if part == PARTITIONTABLE_NAME:
+            # Return a fake partition entry for the partition table
+            return PartitionEntry(
+                b"",
+                0,
+                -1,
+                PartitionTable.PART_TABLE_OFFSET,
+                PartitionTable.PART_TABLE_SIZE,
+                PARTITIONTABLE_NAME.encode(),
                 0,
             )
         return part if isinstance(part, PartitionEntry) else self.table.by_name(part)
@@ -119,7 +138,7 @@ class Firmware:
                 f"does not match bootloader ({self.header.chip_name})."
             )
             return False
-        if name == "bootloader" and header.flash_size != self.header.flash_size:
+        if name == BOOTLOADER_NAME and header.flash_size != self.header.flash_size:
             log.warning(
                 f"'{name}': image flash size ({header.flash_size}) "
                 f"does not match bootloader ({self.header.flash_size})."
@@ -173,21 +192,21 @@ class Firmware:
         self, new_table: PartitionTable, check_hash: bool = False
     ) -> None:
         """Check that the app partitions contain valid app image signatures."""
-        app_parts = [self._get_part("bootloader")] + [
+        app_parts = [self._get_part(BOOTLOADER_NAME)] + [
             p for p in new_table if p.type_name == "app" and p.offset < self.size
         ]
         for part in app_parts:
             # Check there is an app header at the start of the partition
             name = part.name
-            with self.partition(part) as p:
-                data = p.read(self.BLOCKSIZE)
+            with self.partition(part) as part:
+                data = part.read(self.BLOCKSIZE)
                 if not self.check_app_image_header(data, name):
                     log.warning(f"Partition '{name}': App image signature not found.")
                     continue
                 log.info(f"Partition '{name}': App image signature found.")
                 if not check_hash:
                     continue
-                data += p.read()  # Read the rest of the partition
+                data += part.read()  # Read the rest of the partition
             header = ImageHeader.from_bytes(data)
             size, calc_sha, stored_sha = header.check_image_hash(data)
             size += len(stored_sha)  # Include the stored hash in the size
@@ -212,45 +231,22 @@ class Firmware:
                 continue
             if newp.type_name == "data" and oldp != newp and newp.offset < self.size:
                 log.action(f"Erasing data partition: {newp.name}...")
-                with self.partition(newp) as p:
-                    p.erase(min(newp.size, 4 * self.BLOCKSIZE))
-
-    def _get_block(
-        self,
-        offset: int,
-        data: bytes | bytearray,
-        blocksize: int,
-        pad_byte: bytes = b"\xff",
-    ) -> tuple[bytes, int]:
-        """Return the block of data containing `offset`."""
-        start = (offset // blocksize) * blocksize
-        end = min(start + blocksize, len(data))
-        data = data[start:end]
-        data += pad_byte[:1] * (blocksize - len(data))
-        assert len(data) == blocksize, f"Block size {len(data):#x} != {blocksize:#x}"
-        return bytes(data), start
+                with self.partition(newp) as part:
+                    part.erase(min(newp.size, 4 * self.BLOCKSIZE))
 
     def update_bootloader(self) -> None:
         """Update the bootloader header and hash, if it has changed."""
-        with self.partition("bootloader") as p:
-            data = p.read()  # Read the whole bootloader
-            data, new_hash_offset = self.header.update_image(data)
-            # Instead of writing a whole new bootloader image, just update the
-            # block containing the header and the block containing the hash
-            p.seek(0)
-            # p.write(data)  # Write the block with the new header
-            p.write(data[: self.BLOCKSIZE])  # Write the block with the new header
-            if new_hash_offset:  # If a new hash was written
-                block, start = self._get_block(new_hash_offset, data, self.BLOCKSIZE)
-                p.seek(start)
-                p.write(block)  # Write the block with the new hash
-            p.truncate()
+        with self.partition(BOOTLOADER_NAME) as part:
+            data = part.read()  # Read the whole bootloader
+            data, _new_hash_offset = self.header.update_image(data)
+            part.seek(0)
+            part.write(data)  # Write the block with the new header
+            part.truncate()  # Erase the rest of the bootloader fake partition
 
     def write_table(self, table: PartitionTable) -> None:
         """Write a new `PartitionTable` to the flash storage or firmware file."""
-        f = self.file
-        f.seek(table.PART_TABLE_OFFSET)
-        f.write(table.to_bytes())
+        with self.partition(PARTITIONTABLE_NAME) as part:
+            part.write(table.to_bytes())
 
     def update_image(self, table: PartitionTable, header: ImageHeader) -> None:
         """Update `image` with a new `PartitionTable` from `table`. Will:
