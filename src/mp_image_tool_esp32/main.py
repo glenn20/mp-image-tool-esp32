@@ -23,12 +23,11 @@ import traceback
 from pathlib import Path
 from typing import Sequence
 
-from . import __version__, argtypes, layouts, ota_update
+from . import __version__, layouts, ota_update
 from . import logger as log
 from .argparse_typed import parser as typed_parser
-from .argtypes import MB, ArgList, IntArg, PartList
+from .argtypes import MB, ArgList, B, IntArg, PartList
 from .firmware import Firmware
-from .firmware_fileio import FirmwareDeviceIO
 from .partition_table import PartitionError, PartitionTable
 
 
@@ -194,15 +193,13 @@ def run_commands(argv: Sequence[str] | None = None) -> None:
         return
 
     if args.flash_size:  # -f --flash-size SIZE : Set size of the flash storage
-        if (
-            isinstance(firmware.file, FirmwareDeviceIO)
-            and args.flash_size > firmware.file.flash_size
-        ):
+        max_flash_size = getattr(firmware.file, "flash_size", 1024 * MB)
+        if args.flash_size > max_flash_size:
             raise ValueError(
                 "Selected flash size is larger than device flash size "
-                f"({args.flash_size // MB}MB > {firmware.file.flash_size // MB}MB)."
+                f"({args.flash_size // MB}MB > {max_flash_size // MB}MB).",
             )
-        if args.flash_size != firmware.header.flash_size:
+        if args.flash_size != new_header.flash_size:
             new_table.max_size = args.flash_size
             new_header.flash_size = args.flash_size
             assert new_header.ismodified(), "Image header not modified!"
@@ -215,15 +212,15 @@ def run_commands(argv: Sequence[str] | None = None) -> None:
     if args.table:  # --table default|ota|nvs=7B,factory=2M,vfs=0
         if args.table == [("ota", "", 0, 0)]:
             # ota_layout returns a string, so parse it into a PartList
-            args.table = argtypes.PartList(layouts.ota_layout(new_table, args.app_size))
+            args.table = PartList(layouts.ota_layout(new_table, args.app_size))
             extension += "-OTA"
         elif args.table == [("default", "", 0, 0)]:
             # DEFAULT_TABLE_LAYOUT is a string, so parse it into a PartList
-            args.table = argtypes.PartList(layouts.DEFAULT_TABLE_LAYOUT)
+            args.table = PartList(layouts.DEFAULT_TABLE_LAYOUT)
             extension += "-DEFAULT"
         elif args.table == [("original", "", 0, 0)]:
             # DEFAULT_TABLE_LAYOUT is a string, so parse it into a PartList
-            args.table = argtypes.PartList(layouts.ORIGINAL_TABLE_LAYOUT)
+            args.table = PartList(layouts.ORIGINAL_TABLE_LAYOUT)
             extension += "-ORIGINAL"
         else:
             extension += "-TABLE"
@@ -235,33 +232,33 @@ def run_commands(argv: Sequence[str] | None = None) -> None:
         app_parts = filter(lambda p: p.type == new_table.APP_TYPE, new_table)
         for p in app_parts:
             new_table.resize_part(p.name, args.app_size)
-        extension += f"-appsize={args.app_size}"
+        extension += f"-appsize={args.app_size // B}B"
 
     if args.delete:  # --delete name1[,name2,..] : Delete partition from table
         for name, *_ in args.delete:
             new_table.remove(new_table.by_name(name))
-        extension += f"-delete={argtypes.unsplit(args.delete)}"
+        extension += f"-delete={args.delete}"
 
     if args.resize:  # --resize NAME1=SIZE[,NAME2=...] : Resize partitions
         for name, *_, new_size in args.resize:
             log.action(f"Resizing {name} partition to {new_size:#x} bytes...")
             new_table.resize_part(name, new_size)
         new_table.check()
-        extension += f"-resize={argtypes.unsplit(args.resize)}"
+        extension += f"-resize={args.resize}"
 
     if args.add:  # --add NAME1=SUBTYPE:OFFSET:SIZE[,..] : Add new partitions
         for name, subtype, offset, size in args.add:
             subtype = layouts.get_subtype(name, subtype)
             new_table.add_part(name, subtype, size, offset)
-        extension += f"-add={argtypes.unsplit(args.add)}"
+        extension += f"-add={args.add}"
 
     ## We have performed all the changes to the partition table...
     ## Write modified partition table to a new file or back to flash storage
 
     if args.erase and not firmware.is_device:
-        extension += f"-erase={argtypes.unsplit(args.erase)}"
+        extension += f"-erase={args.erase}"
     if args.write and not firmware.is_device:
-        extension += f"-write={argtypes.unsplit(args.write)}"
+        extension += f"-write={args.write}"
 
     if extension or args.output:  # A change has been made to the partition table
         if new_table.app_part.offset != firmware.table.app_part.offset:

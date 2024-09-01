@@ -13,7 +13,7 @@ Includes some argument type conversion helper functions and classes:
 from __future__ import annotations
 
 import re
-from typing import Iterable, List, Tuple  # Need List & Tuple for py3.8
+from typing import List, Tuple  # Need List & Tuple for py3.8
 
 MB = 0x100_000  # 1 Megabyte
 KB = 0x400  # 1 Kilobyte
@@ -58,6 +58,10 @@ class ArgList(List[List[str]]):
             [re.split(DELIMITERS[1], s) for s in re.split(DELIMITERS[0], arg.strip())]
         )
 
+    def __str__(self) -> str:
+        """Reconstruct the argument list as a string."""
+        return ",".join("=".join(str(s) for s in x if s) for x in self)
+
 
 class PartList(List[Tuple[str, str, int, int]]):
     """Split a command line argument into a list of tuples describing a
@@ -83,8 +87,6 @@ class PartList(List[Tuple[str, str, int, int]]):
             ]
         )
 
-
-def unsplit(arglist: Iterable[Iterable[str | int]]) -> str:
-    """Join a list of lists of strings or ints into a single string
-    delimited by "," and then "="."""
-    return ",".join("=".join(str(s) for s in x if s) for x in arglist)
+    def __str__(self) -> str:
+        """Reconstruct the partition list as a string."""
+        return ",".join("=".join(str(s) for s in x if s) for x in self)
