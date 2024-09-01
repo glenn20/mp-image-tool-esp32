@@ -95,30 +95,17 @@ class Firmware:
     def _get_part(self, part: PartitionEntry | str) -> PartitionEntry:
         """Return a `PartitionEntry` object for the partition `part`.
         `part` can be a `PartitionEntry` object or the name of a partition
-        or one of the special names `bootloader` and `partitiontable`."""
-        if part == BOOTLOADER_NAME:
-            # Return a fake partition entry for the bootloader
-            return PartitionEntry(
-                b"",
-                0,
-                -1,
-                self.bootloader,
-                PartitionTable.BOOTLOADER_SIZE,
-                BOOTLOADER_NAME.encode(),
-                0,
-            )
-        if part == PARTITIONTABLE_NAME:
-            # Return a fake partition entry for the partition table
-            return PartitionEntry(
-                b"",
-                0,
-                -1,
-                PartitionTable.PART_TABLE_OFFSET,
-                PartitionTable.PART_TABLE_SIZE,
-                PARTITIONTABLE_NAME.encode(),
-                0,
-            )
-        return part if isinstance(part, PartitionEntry) else self.table.by_name(part)
+        or one of the special names `bootloader` and `partition_table`."""
+        if isinstance(part, PartitionEntry):
+            return part
+        PT = PartitionTable
+        for name, offset, size in (  # First check the fake table entries
+            (BOOTLOADER_NAME, self.bootloader, PT.BOOTLOADER_SIZE),
+            (PARTITIONTABLE_NAME, PT.PART_TABLE_OFFSET, PT.PART_TABLE_SIZE),
+        ):
+            if part == name:
+                return PartitionEntry(b"", 0, -1, offset, size, name.encode(), 0)
+        return self.table.by_name(part)
 
     def partition(self, part: PartitionEntry | str) -> Partition:
         """Return a `Partition` object for the partition `part`."""
