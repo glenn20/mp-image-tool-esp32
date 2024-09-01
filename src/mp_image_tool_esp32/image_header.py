@@ -94,12 +94,12 @@ class ImageHeader(ImageHeaderStruct):
 
     def __init__(self, *args: Any, **kwargs: Any):
         super().__init__(*args, **kwargs)
-        self.check()
+        self.validate()
 
     def is_erased(self) -> bool:
         return bytes(self).count(0xFF) == sizeof(self)
 
-    def check(self) -> ImageHeader:
+    def validate(self) -> ImageHeader:
         if self.magic != self.APP_IMAGE_MAGIC:
             raise ValueError("Invalid image file: magic bytes not found.")
         if not self.chip_name.startswith("esp32"):

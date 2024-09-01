@@ -49,7 +49,7 @@ class FirmwareFileIO(io.BufferedRandom):
         # Detach the raw base file from `file` and attach it to this object
         f = open(name, "r+b")
         self.header = ImageHeader.from_file(f)
-        self.header.check()  # Raise an exception for invalid headers
+        self.header.validate()  # Raise an exception for invalid headers
         self.bootloader = BOOTLOADER_OFFSET[self.header.chip_name]
         self.size = f.seek(0, 2) + self.bootloader
         f.seek(0)  # Reset file position
@@ -59,7 +59,9 @@ class FirmwareFileIO(io.BufferedRandom):
         if whence == 0:  # If seek from start of file, adjust for offset
             pos -= self.bootloader  # Adjust pos for offset
             if pos < 0:
-                raise ValueError(f"Attempt to seek before offset ({self.bootloader:#x}).")
+                raise ValueError(
+                    f"Attempt to seek before offset ({self.bootloader:#x})."
+                )
         return super().seek(pos, whence) + self.bootloader
 
     def tell(self) -> int:
@@ -114,7 +116,7 @@ class FirmwareDeviceIO(BinaryIO):
                 "No bootloader found on flash.\n"
                 "  Use '--flash' option to flash new firmware."
             )
-        self.header.check()
+        self.header.validate()
         if self.esptool.chip_name and self.esptool.chip_name != self.header.chip_name:
             log.error(
                 f"Detected device chip type ({self.esptool.chip_name}) is "

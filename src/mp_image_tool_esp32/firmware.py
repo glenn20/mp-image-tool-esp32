@@ -127,7 +127,7 @@ class Firmware:
         """Check that `data` is a valid app image for this device/firmware."""
         try:
             header = ImageHeader.from_bytes(data)
-            header.check()
+            header.validate()
         except ValueError:
             return False
         if not header.chip_name:  # `data` is not an app image
