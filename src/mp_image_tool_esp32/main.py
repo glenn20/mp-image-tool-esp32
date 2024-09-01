@@ -278,8 +278,9 @@ def run_commands(argv: Sequence[str] | None = None) -> None:
             output_filename = args.output or re.sub(
                 r"([.][^.]+)?$", f"{extension}\\1", basename, 1
             )
-            shutil.copy(input, output_filename)
             firmware.file.close()
+            log.action(f"Writing firmware to {output_filename}...")
+            shutil.copy(input, output_filename)
             firmware = Firmware(output_filename)
 
         # Update the firmware with the new partition table and bootloader header...

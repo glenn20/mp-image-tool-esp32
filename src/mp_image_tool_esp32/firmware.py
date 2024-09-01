@@ -50,6 +50,7 @@ class Firmware:
     header: ImageHeader
     bootloader: int
     is_device: bool
+    table: PartitionTable
     BLOCKSIZE: int = BLOCKSIZE
 
     def __init__(
@@ -76,14 +77,14 @@ class Firmware:
         self.is_device = isinstance(self.file, FirmwareDeviceIO)
         self.header = self.file.header
         self.bootloader = self.file.bootloader
+        self.table = self._load_table()
 
     @cached_property
     def size(self) -> int:
         """Return the size of the firmware file or device."""
         return self.file.seek(0, 2)
 
-    @cached_property
-    def table(self) -> PartitionTable:
+    def _load_table(self) -> PartitionTable:
         """Load, check and return a `PartitionTable` from an `ESP32Image`
         object."""
         return PartitionTable.from_bytes(
@@ -262,4 +263,4 @@ class Firmware:
         self.write_table(table)
         self.check_app_partitions(table)  # Check app parts for valid app signatures
         self.check_data_partitions(table)  # Erase data partitions which have changed
-        self.table = table
+        self.table = self._load_table()
