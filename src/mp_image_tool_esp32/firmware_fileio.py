@@ -59,7 +59,7 @@ class FirmwareFileIO(io.BufferedRandom):
         if whence == 0:  # If seek from start of file, adjust for offset
             pos -= self.bootloader  # Adjust pos for offset
             if pos < 0:
-                raise OSError(f"Attempt to seek before offset ({self.bootloader:#x}).")
+                raise ValueError(f"Attempt to seek before offset ({self.bootloader:#x}).")
         return super().seek(pos, whence) + self.bootloader
 
     def tell(self) -> int:
@@ -293,7 +293,7 @@ class Partition(BinaryIO):
         if not size or pos + size > self.part.size:
             size = self.part.size - pos
         if not 0 <= pos + size <= self.part.size:
-            raise OSError(
+            raise ValueError(
                 f"Attempt to erase outside partition {self.part.name} "
                 f"({pos=:#x} {size=:#x})."
             )
