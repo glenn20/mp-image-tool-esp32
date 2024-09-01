@@ -87,7 +87,11 @@ def test_flash_size_vfs(firmware: Path):
 def test_read(firmware: Path, bootloader: bytes):
     out = Path("out.bin")
     mpi_run(firmware, f"--read bootloader={out.name}")
-    output = out.read_bytes().rstrip(b"\xFF")
+    output = out.read_bytes()
+    assert len(output) == 0x7_000
+    assert output.rstrip(b"\xff") == bootloader
+    mpi_run(firmware, f"--read bootloader={out.name} --trim")
+    output = out.read_bytes()
     assert len(output) == len(bootloader)
     assert output == bootloader
 

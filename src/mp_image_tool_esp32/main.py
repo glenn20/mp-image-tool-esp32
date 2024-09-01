@@ -70,6 +70,8 @@ class TypedNamespace(argparse.Namespace):
     read: ArgList
     write: ArgList
     flash: str
+    trim: bool
+    trimblocks: bool
     _globals = globals()  # Used to access the module's global variables.
 
 
@@ -113,11 +115,17 @@ usage = """
                         | erase first 4 blocks of a partition on flash storage.\
                             Micropython will initialise filesystem on next boot.
     --read NAME1=FILE1[,NAME2=FILE2,bootloader=FILE,...] \
-                        | copy partition contents (or bootloader) to file.
+                        | copy partition contents (or bootloader) to file. \
+                          Use --trimblocks or --trim to remove trailing blank blocks.
     --write NAME1=FILE1[,NAME2=FILE2,bootloader=FILE,...] \
                         | write file(s) contents into partitions \
                             (or bootloader) in the firmware.
     --flash DEVICE      | flash new firmware to the serial-attached device.
+    --trimblocks        | Remove trailing blank blocks from data returned by \
+                          --read and --extract-app. This is useful for reading \
+                          app images and filesystems from flash storage.
+    --trim              | Like --trimblocks, but trims to 16-byte boundary. This \
+                          is appropriate for reading app images from flash storage.
 
     Where SIZE is a decimal or hex number with an optional suffix (M=megabytes,
     K=kilobytes, B=blocks (0x1000=4096 bytes)).
@@ -210,15 +218,15 @@ def run_commands(argv: Sequence[str] | None = None) -> None:
         extension += "-CSV"
 
     if args.table:  # --table default|ota|nvs=7B,factory=2M,vfs=0
-        if args.table == [("ota", "", 0, 0)]:
+        if str(args.table) == "ota":
             # ota_layout returns a string, so parse it into a PartList
             args.table = PartList(layouts.ota_layout(new_table, args.app_size))
             extension += "-OTA"
-        elif args.table == [("default", "", 0, 0)]:
+        elif str(args.table) == "default":
             # DEFAULT_TABLE_LAYOUT is a string, so parse it into a PartList
             args.table = PartList(layouts.DEFAULT_TABLE_LAYOUT)
             extension += "-DEFAULT"
-        elif args.table == [("original", "", 0, 0)]:
+        elif str(args.table) == "original":
             # DEFAULT_TABLE_LAYOUT is a string, so parse it into a PartList
             args.table = PartList(layouts.ORIGINAL_TABLE_LAYOUT)
             extension += "-ORIGINAL"
@@ -303,8 +311,13 @@ def run_commands(argv: Sequence[str] | None = None) -> None:
     if args.read:  # --read NAME1=FILE1[,...]: Read contents of parts into FILES
         for name, filename in args.read:
             log.action(f"Saving partition '{name}' into '{filename}'...")
-            n = Path(filename).write_bytes(firmware.partition(name).read())
-            log.info(f"Wrote {n:#x} bytes to '{filename}'.")
+            data = firmware.partition(name).read()
+            if args.trimblocks:  # Trim trailing blank 4096-byte blocks from data
+                data = firmware.trimblocks(data)
+            if args.trim:  # Trim trailing blank 16-byte blocks from data
+                data = firmware.trimblocks(data, 16)
+            n = Path(filename).write_bytes(data)
+            log.info(f"Wrote {n:,} bytes to '{filename}'.")
 
     if args.write:  # --write NAME1=FILE1[,...] : Write FILES into partitions
         for name, filename in args.write:

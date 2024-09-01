@@ -126,17 +126,26 @@ class Firmware:
             )
         return True
 
+    def trimblocks(self, data: bytes, blocksize: int = 0) -> bytes:
+        """Trim trailing 0xff bytes from `data` to the nearest block
+        boundary."""
+        blocksize = blocksize or self.BLOCKSIZE
+        n = len(data)
+        while n > 0 and data[n - 1] == 0xFF:
+            n -= 1
+        return data[: min(len(data), ((n + blocksize - 1) // blocksize) * blocksize)]
+
     def save_app_image(self, output: str) -> int:
         """Read the first app image from the device and write it to a file."""
-        with self.partition(self.table.app_part) as p:
+        with self.partition(self.table.app_part) as part:
             with open(output, "wb") as fout:
-                return fout.write(p.read().rstrip(b"\xff"))  # Remove trailing padding
+                return fout.write(self.trimblocks(part.read(), 16))
 
     def read_firmware(self) -> bytes:
         """Return the entire firmware from this image as `bytes"""
         f = self.file
-        f.seek(self.bootloader)
-        return f.read()
+        f.seek(self.bootloader)  # Firmware files start at the bootloader
+        return self.trimblocks(f.read(), 16)  # Trim trailing 0xff bytes
 
     def write_firmware(self, image: Firmware) -> int:
         """Write firmware from `image` into this image."""
