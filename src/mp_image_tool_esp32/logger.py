@@ -3,8 +3,8 @@
 """
 
 import logging
-from logging import CRITICAL, DEBUG, ERROR, INFO, NOTSET, WARNING
 import sys
+from logging import CRITICAL, DEBUG, ERROR, INFO, NOTSET, WARNING, getLogger
 from typing import Any
 
 import colorama
@@ -35,8 +35,9 @@ log_levels = {
 colorama.init()
 logging.addLevelName(ACTION, "ACTION")
 logging.basicConfig(stream=sys.stdout, format=FORMAT)
-logger = logging.getLogger()  # Use the root logger
-logger.setLevel(logging.INFO)
+parent_module = __name__.rsplit(".", 1)[0]
+logger = getLogger(parent_module)  # Use the parent module logger
+logger.setLevel(INFO)
 
 
 def colour(msg: str, level: int) -> str:

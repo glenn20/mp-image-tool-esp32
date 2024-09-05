@@ -155,13 +155,13 @@ class PartitionTable(List[PartitionEntry]):
 
     def by_name(self, name: str) -> PartitionEntry:
         if (p := self.find(name)) is None:
-            raise PartitionError(f"Partition {name} not found.", self)
+            raise PartitionError(f"Partition '{name}' not found.", self)
         return p
 
     def by_subtype(self, subtype_name: str) -> PartitionEntry:
         p = next((p for p in self if p.subtype_name == subtype_name), None)
         if not p:
-            raise PartitionError(f"Partition {subtype_name} not found.", self)
+            raise PartitionError(f"Partition '{subtype_name}' not found.", self)
         return p
 
     def __str__(self) -> str:
