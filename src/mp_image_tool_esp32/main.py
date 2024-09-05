@@ -28,6 +28,7 @@ from . import logger as log
 from .argparse_typed import parser as typed_parser
 from .argtypes import MB, ArgList, B, IntArg, PartList
 from .firmware import Firmware
+from .lfs import lfs_cmd
 from .partition_table import PartitionError, PartitionTable
 
 
@@ -51,6 +52,7 @@ class TypedNamespace(argparse.Namespace):
     output: str
     quiet: bool
     debug: bool
+    log: ArgList
     no_reset: bool
     check_app: bool
     extract_app: bool
@@ -72,6 +74,7 @@ class TypedNamespace(argparse.Namespace):
     flash: str
     trim: bool
     trimblocks: bool
+    fs: list[str]
     _globals = globals()  # Used to access the module's global variables.
 
 
@@ -86,12 +89,14 @@ usage = """
     filename            | the esp32 firmware filename or serial device
     -o --output FILE    | output firmware filename (auto-generated if not given)
     -q --quiet          | set debug level to WARNING (default: INFO)
-    -d --debug          | set debug level to DEBUG (default: INFO)
     -n --no-reset       | leave device in bootloader mode afterward
     -x --extract-app    | extract .app-bin from firmware
     -f --flash-size SIZE| size of flash for new partition table
     -a --app-size SIZE  | size of factory and ota app partitions
     -m --method METHOD  | esptool method: subprocess, command or direct (default)
+    -d --debug          | set debug level to DEBUG (default: INFO)
+    --log NAME=LEVEL[,NAME=LEVEL,...] \
+                        | set the log level for the named loggers.
     --check-app         | check app partitions and OTA config are valid
     --no-rollback       | disable app rollback after OTA update
     --baud RATE         | baud rate for serial port (default: 460800)
@@ -125,10 +130,14 @@ usage = """
                           --read and --extract-app. This is useful for reading \
                           app images and filesystems from flash storage.
     --trim              | Like --trimblocks, but trims to 16-byte boundary. This \
-                          is appropriate for reading app images from flash storage.
+                          is appropriate for reading app images from flash \
+                          storage.
+    --fs CMD ARG1 ARG2 ... | Operate on files in the `vfs` or other filesystem partitions.
 
     Where SIZE is a decimal or hex number with an optional suffix (M=megabytes,
     K=kilobytes, B=blocks (0x1000=4096 bytes)).
+
+    --fs commands include: ls, get, put, mkdir, rm, rename, cat, info, mkfs, and more.
 
     Options --erase-fs and --ota-update can only be used when operating on
     serial-attached devices (not firmware files).
@@ -153,10 +162,14 @@ def expand_device_short_names(name: str) -> str:
 def run_commands(argv: Sequence[str] | None = None) -> None:
     namespace = TypedNamespace()
     parser = typed_parser(usage, namespace)
-    args = parser.parse_args(namespace=namespace)
+    args = parser.parse_args(args=argv, namespace=namespace)
     progname = os.path.basename(sys.argv[0])
 
-    log.setLevel("DEBUG" if args.debug else "WARNING" if args.quiet else "INFO")
+    log.setLevel("DEBUG" if args.debug else "ERROR" if args.quiet else "INFO")
+    if args.log:
+        for name, level in args.log:
+            log.getLogger(name).setLevel(level.upper())
+
     log.action(
         f"Running {progname} v{__version__} (Python {platform.python_version()})."
     )
@@ -350,6 +363,13 @@ def run_commands(argv: Sequence[str] | None = None) -> None:
         except PartitionError:
             pass  # No OTA partitions
 
+    if args.fs:  # --fs CMD NAME1[,NAME2,...] : Perform a filesystem command
+        # Process any littlefs filesystem commands
+        command, fs_args = args.fs[0], args.fs[1:]
+        lfs_cmd(firmware, command, fs_args)
+        firmware.file.close()
+        return
+
     if args.flash:  # --flash DEVICE : Flash firmware to the device
         filename = expand_device_short_names(args.flash)
         device = None
@@ -379,7 +399,7 @@ def run_commands(argv: Sequence[str] | None = None) -> None:
 
 def main() -> int:
     try:
-        run_commands()
+        run_commands(sys.argv[1:])
     except (KeyboardInterrupt, Exception) as err:
         log.error(f"{type(err).__name__}: {err}")
         if log.isloglevel("debug"):

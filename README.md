@@ -1,14 +1,14 @@
 # mp-image-tool-esp32: Working with esp32 firmware files and devices
 
-Tool for manipulating partition tables in MicroPython esp32 firmware image files
-and device flash storage.
+Tool for manipulating partition tables and files in MicroPython esp32 firmware
+image files and device flash storage.
 
 `mp-image-tool-esp32` manipulates micropython esp32 firmware files and flash
 storage on serial-attached ESP32 devices. It has been tested to work with ESP32,
 ESP32-S2 and ESP32-S3 firmware images and devices.
 
 **Contents: [Features](#features) | [Installation](#installation) |
-[Examples](#examples) | [OTA Updates](#ota-firmware-updates) | [Usage](#usage)**
+[Examples](#examples) | [Filesystem Operations](#filesystem-operations) | [OTA Updates](#ota-firmware-updates) | [Usage](#usage)**
 
 ```console
 $ mp-image-tool-esp32 ESP32_GENERIC-20231005-v1.21.0.bin
@@ -79,6 +79,15 @@ Use `mp-image-tool-esp32 u0` to operate on the esp32 device attached to
 `/dev/ttyUSB0`. When operating on esp32 devices over a serial interface, the
 following additional commands are available:
 
+- Perform operations on the files installed on the `vfs` or other filesystem
+  partition:
+  - `--fs ls` will list all the files on the device filesystem
+  - `--fs get . backup` will copy all the files on the device filesystem to
+    `backup`
+    on the local computer
+  - `--fs put backup/* /` will copy all the files from `backup` onto the
+    device filesystem .
+    - See [below](#filesystem-operations) for more filesystem operations
 - Erase 'vfs' filesystem partitions:
   - `--erase-fs vfs` : erases the first 4 blocks of the partition
     - micropython will automatically build a fresh filesystem on the next boot
@@ -155,9 +164,7 @@ To install in your python environment:
 
 ## Examples
 
-### Operating on ESP32 Firmware Files
-
-#### Resize the flash size and expand the vfs partition to fill the space
+#### Change the flash size of a firmware file and expand the vfs partition
 
 ```console
 $ mp-image-tool-esp32 ESP32_GENERIC-20231005-v1.21.0.bin -f 8M --resize vfs=0
@@ -183,69 +190,7 @@ Partition table (flash size: 8MB):
 Micropython app fills 78.8% of factory partition (421 kB free)
 ```
 
-#### Convert a generic image to an OTA-capable firmware image
-
-```console
-$ mp-image-tool-esp32 ESP32_GENERIC-20231005-v1.21.0-8MB.bin --table ota
-Opening image file: ESP32_GENERIC-20231005-v1.21.0-8MB.bin...
-Warning: End of last partition (0x400000) < flash size (0x800000).
-Chip type: esp32
-Flash size: 8MB
-Micropython App size: 0x186bb0 bytes (1,562 KB)
-Partition table (flash size: 8MB):
-# Name             Type     SubType      Offset       Size      (End)  Flags
-  nvs              data     nvs          0x9000     0x6000     0xf000  0x0  (24.0 kB)
-  phy_init         data     phy          0xf000     0x1000    0x10000  0x0   (4.0 kB)
-  factory          app      factory     0x10000   0x1f0000   0x200000  0x0   (1.9 MB)
-  vfs              data     fat        0x200000   0x200000   0x400000  0x0   (2.0 MB)
-Warning: End of last partition (0x400000) < flash size (0x800000).
-Micropython app fills 78.8% of factory partition (421 kB free)
-Writing output file: ESP32_GENERIC-20231005-v1.21.0-8MB-OTA.bin...
-Partition table (flash size: 8MB):
-# Name             Type     SubType      Offset       Size      (End)  Flags
-  nvs              data     nvs          0x9000     0x5000     0xe000  0x0  (20.0 kB)
-  otadata          data     ota          0xe000     0x2000    0x10000  0x0   (8.0 kB)
-  ota_0            app      ota_0       0x10000   0x200000   0x210000  0x0   (2.0 MB)
-  ota_1            app      ota_1      0x210000   0x200000   0x410000  0x0   (2.0 MB)
-  vfs              data     fat        0x410000   0x3f0000   0x800000  0x0   (3.9 MB)
-Micropython app fills 76.3% of ota_0 partition (485 kB free)
-```
-
-### Operating on ESP32 Devices
-
-#### Resize the flash size and expand the vfs partition to fill available space
-
-- will automatically erase the first 4 blocks of any data partition which is
-  changed by the operation.
-  - micropython will automatically create a new filesystem on 'vfs' at next
-    boot.
-
-```console
-$ mp-image-tool-esp32 u0 -f 8M --resize vfs=0
-Opening esp32 device at: /dev/ttyUSB0...
-Warning: End of last partition (0x400000) < flash size (0x800000).
-Chip type: esp32
-Flash size: 8MB
-Partition table (flash size: 8MB):
-# Name             Type     SubType      Offset       Size      (End)  Flags
-  nvs              data     nvs          0x9000     0x6000     0xf000  0x0  (24.0 kB)
-  phy_init         data     phy          0xf000     0x1000    0x10000  0x0   (4.0 kB)
-  factory          app      factory     0x10000   0x1f0000   0x200000  0x0   (1.9 MB)
-  vfs              data     fat        0x200000   0x200000   0x400000  0x0   (2.0 MB)
-Warning: End of last partition (0x400000) < flash size (0x800000).
-Resizing vfs partition to 0x600000 bytes.
-Writing new table to flash storage at /dev/ttyUSB0...
-Partition table (flash size: 8MB):
-# Name             Type     SubType      Offset       Size      (End)  Flags
-  nvs              data     nvs          0x9000     0x6000     0xf000  0x0  (24.0 kB)
-  phy_init         data     phy          0xf000     0x1000    0x10000  0x0   (4.0 kB)
-  factory          app      factory     0x10000   0x1f0000   0x200000  0x0   (1.9 MB)
-  vfs              data     fat        0x200000   0x600000   0x800000  0x0   (6.0 MB)
-Setting flash_size in bootloader to 8.0MB...
-Erasing data partition: vfs...
-```
-
-#### Resize the flash storage and write an OTA partition table
+#### Change the flash size of firmware on a device and write an OTA partition table
 
 ```console
 $ mp-image-tool-esp32 u0 -f 8M --table ota
@@ -293,6 +238,51 @@ Performing OTA firmware upgrade from 'ESP32_GENERIC-20231005-v1.21.0-8MB-OTA.app
 Writing firmware to OTA partition ota_1...
 Updating otadata partition...
 ```
+
+## Filesystem Operations
+
+`mp_image_tool_esp32` can be used to access and manipulate files installed on
+the device filesystems. Only `littlefsv2` filesystems are supported (the default
+filesystem used by micropython).
+
+The available fs comands are:
+
+- `--fs ls /lib /data`: Recursively list the files in the `/lib` and `/data`
+  directories of the `vfs` partition.
+- `--fs get /lib /data backup`: Recursively copy `/lib` and `/data`
+  from the device to `./backup` on the local host.
+- `--fs put backup/* /`: Recursively copy all files and dirs in `backup/` to the
+  device.
+- `--fs cat boot.py`: Print out the contents of `/boot.py` on the device.
+- `--fs mkdir /data`: Create a new directory on the device.
+- `--fs rm /boot.py /main.py`: Recursively delete files and directories on the device.
+- `--fs rename app.py main.py`: Rename files on the device.
+- `--fs mkfs vfs`: Create a new littlefsv2 filesystem on the `vfs` partition
+  (will erase the partition first).
+
+Filenames on the device can be prefixed with a partition name to operate on a
+filesystem partition other than `vfs`, eg. `--fs ls vfs2:/recordings`.
+
+The `--fs` commands operate directly on the filesystem on the flash storage, and
+not through the micropython repl. Some operations may be much faster using
+this method, though the current implementation does not yet support block
+caching which should provide further performance improvements.
+
+`mp_image_tool_esp32` uses the
+[`littlefs-python`](https://github.com/jrast/littlefs-python) package to operate
+on the filesystems.
+
+You can also use `littlefs-python` to build filesystem partitions on your
+computer and flash them to the device, eg:
+
+```bash
+littlefs-python create --compact --no-pad --block-size 4096 --fs-size=2mb ./root-fs vfs.bin
+mp-image-tool-esp32 u0 --write vfs=vfs.bin
+```
+
+will create a new littlefs filesystem image, fill it with files from the
+root-fs directory and flash it to the `vfs` partition on the device attached to
+serial port `/dev/ttyUSB0`.
 
 ## OTA firmware updates
 
