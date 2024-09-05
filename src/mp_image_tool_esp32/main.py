@@ -74,7 +74,7 @@ class TypedNamespace(argparse.Namespace):
     flash: str
     trim: bool
     trimblocks: bool
-    fs: list[str]
+    fs: list[list[str]]
     _globals = globals()  # Used to access the module's global variables.
 
 
@@ -88,7 +88,7 @@ usage = """
 
     filename            | the esp32 firmware filename or serial device
     -o --output FILE    | output firmware filename (auto-generated if not given)
-    -q --quiet          | set debug level to WARNING (default: INFO)
+    -q --quiet          | set debug level to ERROR (default: INFO)
     -n --no-reset       | leave device in bootloader mode afterward
     -x --extract-app    | extract .app-bin from firmware
     -f --flash-size SIZE| size of flash for new partition table
@@ -132,7 +132,8 @@ usage = """
     --trim              | Like --trimblocks, but trims to 16-byte boundary. This \
                           is appropriate for reading app images from flash \
                           storage.
-    --fs CMD ARG1 ARG2 ... | Operate on files in the `vfs` or other filesystem partitions.
+    --fs CMD ARG1 ARG2 ... | Operate on files in the `vfs` or other filesystem \
+                          partitions. | A
 
     Where SIZE is a decimal or hex number with an optional suffix (M=megabytes,
     K=kilobytes, B=blocks (0x1000=4096 bytes)).
@@ -167,8 +168,13 @@ def run_commands(argv: Sequence[str] | None = None) -> None:
 
     log.setLevel("DEBUG" if args.debug else "ERROR" if args.quiet else "INFO")
     if args.log:
-        for name, level in args.log:
-            log.getLogger(name).setLevel(level.upper())
+        if str(args.log) == "show":
+            log.info(
+                f"Available loggers: {list(log.logging.root.manager.loggerDict.keys())}"
+            )
+        else:
+            for name, level in args.log:
+                log.getLogger(name).setLevel(level.upper())
 
     log.action(
         f"Running {progname} v{__version__} (Python {platform.python_version()})."
@@ -177,8 +183,8 @@ def run_commands(argv: Sequence[str] | None = None) -> None:
     ## Open the firmware file or esp32 device
 
     # Use u0, a0, and c0 as aliases for /dev/ttyUSB0. /dev/ttyACM0 and COM0
-    name: str = args.filename  # the input firmware filename
-    input: str = expand_device_short_names(name)
+    filename: str = args.filename  # the input firmware filename
+    input: str = expand_device_short_names(filename)
     basename: str = os.path.basename(input)
     log.action(f"Opening {input}...")
     firmware: Firmware = Firmware(
@@ -365,10 +371,8 @@ def run_commands(argv: Sequence[str] | None = None) -> None:
 
     if args.fs:  # --fs CMD NAME1[,NAME2,...] : Perform a filesystem command
         # Process any littlefs filesystem commands
-        command, fs_args = args.fs[0], args.fs[1:]
-        lfs_cmd(firmware, command, fs_args)
-        firmware.file.close()
-        return
+        for command, *fs_args in args.fs:
+            lfs_cmd(firmware, command, fs_args)
 
     if args.flash:  # --flash DEVICE : Flash firmware to the device
         filename = expand_device_short_names(args.flash)
@@ -399,6 +403,7 @@ def run_commands(argv: Sequence[str] | None = None) -> None:
 
 def main() -> int:
     try:
+        log.setLevel("DEBUG" if "-d" in sys.argv or "--debug" in sys.argv else "INFO")
         run_commands(sys.argv[1:])
     except (KeyboardInterrupt, Exception) as err:
         log.error(f"{type(err).__name__}: {err}")
