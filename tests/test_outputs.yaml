@@ -78,3 +78,52 @@
     factory          app      factory     0x10000   0x1f0000   0x200000   0x0   (1.9 MB)
     vfs              data     fat        0x200000   0x100000   0x300000   0x0   (1.0 MB)
     data             data     fat        0x300000    0x32000   0x332000   0x0 (200.0 kB)
+
+-q --fs ls: |
+  boot.py
+  lib/
+  lib/ota/
+  lib/ota/blockdev_writer.mpy
+  lib/ota/rollback.mpy
+  lib/ota/status.mpy
+  lib/ota/update.mpy
+
+-q --fs cat boot.py: |
+  # This file is executed on every boot (including wake-boot from deepsleep)
+  #import esp
+  #esp.osdebug(None)
+  #import webrepl
+  #webrepl.start()
+
+-q --fs rename boot.py boot.bak: |
+  boot.bak
+  lib/
+  lib/ota/
+  lib/ota/blockdev_writer.mpy
+  lib/ota/rollback.mpy
+  lib/ota/status.mpy
+  lib/ota/update.mpy
+
+-q --fs mkdir data: |
+  boot.py
+  data/
+  lib/
+  lib/ota/
+  lib/ota/blockdev_writer.mpy
+  lib/ota/rollback.mpy
+  lib/ota/status.mpy
+  lib/ota/update.mpy
+
+-q --fs rm lib/ota/blockdev_writer.mpy: |
+  boot.py
+  lib/
+  lib/ota/
+  lib/ota/rollback.mpy
+  lib/ota/status.mpy
+  lib/ota/update.mpy
+
+-q --fs rm /lib: |
+  boot.py
+
+-q --fs mkfs vfs: |
+  boot.py

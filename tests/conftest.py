@@ -17,10 +17,13 @@ datadir: Path = Path(__file__).parent / "data"  # Location for firmware files
 
 mpi_prog: Path = rootdir / "mp-image-tool-esp32"  # Location of the tool to test
 
+BOOTLOADER_OFFSET = 0x1_000  # Size of the bootloader in the firmware file
 BOOTLOADER_SIZE = 0x7_000  # Size of the bootloader in the firmware file
 FACTORY_OFFSET = 0x10_000  # Offset of the factory partition in the firmware file
 FACTORY_SIZE = 0x1F0_000  # Size of the factory partition in the firmware file
 
+KB = 1024  # 1KB in bytes
+MB = 1024 * 1024  # 1MB in bytes
 
 # After initialising an ESP32 device the partition table should be as follows:
 # If the table does not match this, the test will exit
@@ -44,6 +47,9 @@ firmware_files = [
 firmware_file: Path = datadir / firmware_files[0]
 mpi_last_output: str = ""
 
+mockfs_dir = datadir / "mock-fs"
+
+assert mockfs_dir.exists(), f"Mock filesystem directory not found: {mockfs_dir}"
 
 # Class to add type annotations for command line options
 class Options(Namespace):
@@ -168,6 +174,37 @@ def firmwarefile(testdir: Path) -> Path:
     Returns the path to the copied file."""
     shutil.copyfile(firmware_file, firmware_file.name)
     return Path(firmware_file.name)
+
+
+@pytest.fixture(scope="session")
+def mock_device_session(testdir: Path) -> Path:
+    """A fixture to create a mock device firmware for testing (session scope).
+    Returns the path to the mock device as a Path object. The mock device
+    firmware is a 4MB firmware file with a 2MB littlefsv2 filesystem at the end.
+    """
+    shutil.copyfile(firmware_file, firmware_file.name)
+    device = Path("mock_esp32_device_session.bin")
+    vfs = Path("vfs.bin")
+    subprocess.run(
+        f"littlefs-python create --fs-size 2mb --block-size 4096 {mockfs_dir} {vfs}".split(),
+        check=True,
+    )
+    assert vfs.stat().st_size == 2 * MB, "Mock filesystem size is not 2MB"
+    with device.open("w+b") as f:
+        f.truncate()
+        f.write(firmware_file.read_bytes())
+        f.write(b"\xff" * (2 * MB - BOOTLOADER_OFFSET - f.tell()))  # Pad to 2MB - 4KB
+        f.write(vfs.read_bytes())
+        assert f.tell() == 4 * MB - BOOTLOADER_OFFSET, "Mock device size is not 4MB"
+    return device
+
+
+@pytest.fixture()
+def mock_device(mock_device_session: Path) -> Path:
+    """A fixture to create a fresh copy of the mock device firmware for testing."""
+    device = Path("mock_esp32_device.bin")
+    shutil.copyfile(mock_device_session, device)
+    return device
 
 
 @pytest.fixture(scope="session")
