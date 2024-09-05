@@ -59,14 +59,23 @@ class TypedArgumentParser:
     ) -> None:
         kwargs: dict[str, Any] = {}
         if len(metavars) > 1:
-            kwargs["metavar"] = metavars
-            kwargs["nargs"] = len(metavars)
+            if metavars[-1] == "...":
+                kwargs["metavar"] = metavars[0]
+                kwargs["nargs"] = "+"
+            else:
+                kwargs["metavar"] = metavars
+                kwargs["nargs"] = len(metavars)
         elif len(metavars) == 1:
             kwargs["metavar"] = metavars[0]
 
         # Get the type hint for the argument from the typed_namespace
         argtype = self._get_argument_type(options[-1])
-        if argtype and argtype is not bool and argtype is not str:
+        if (
+            argtype
+            and argtype is not bool
+            and argtype is not str
+            and len(metavars) == 1
+        ):
             kwargs["type"] = argtype
         elif argtype is bool and not action:
             # default for bool, unless action or fun have been set
