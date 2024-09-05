@@ -274,7 +274,7 @@ class Partition(BinaryIO):
             nextblock = (size + self.file.BLOCKSIZE - 1) // self.file.BLOCKSIZE
             size = nextblock * self.file.BLOCKSIZE
             self.seek(size)  # Seek to the next block
-            log.action(f"Erasing remainder of partition '{self.part.name}'...")
+            log.action(f"Erasing partition '{self.part.name}' from {size:#x}...")
             self.file.erase(self.part.size - size)
             return size
 

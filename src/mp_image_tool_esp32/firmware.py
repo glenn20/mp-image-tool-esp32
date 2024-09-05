@@ -16,8 +16,6 @@ firmware files.
 
 from __future__ import annotations
 
-from functools import cached_property
-
 from . import logger as log
 from .argtypes import MB, B
 from .firmware_fileio import FirmwareDeviceIO, FirmwareFileIO, Partition
@@ -78,11 +76,7 @@ class Firmware:
         self.header = self.file.header
         self.bootloader = self.file.bootloader
         self.table = self._load_table()
-
-    @cached_property
-    def size(self) -> int:
-        """Return the size of the firmware file or device."""
-        return self.file.seek(0, 2)
+        self.size = self.file.size
 
     def _load_table(self) -> PartitionTable:
         """Load, check and return a `PartitionTable` from an `ESP32Image`
