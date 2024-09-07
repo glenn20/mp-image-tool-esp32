@@ -12,12 +12,14 @@ on a firmware image file.
 
 from __future__ import annotations
 
-import logging
 import os
+from collections import defaultdict
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO, Iterable, Iterator
 
+import more_itertools
 from littlefs import LFSConfig, LFSStat, LittleFS, UserContext
 
 from . import logger as log
@@ -35,6 +37,122 @@ BOOT_PY = """\
 #webrepl.start()
 """
 
+logger = log.getLogger(__name__)
+
+
+@dataclass
+class CacheStats:
+    """A dataclass to hold cache statistics for a BlockCache."""
+
+    reads: int = 0
+    misses: int = 0
+    writes: int = 0
+
+    @property
+    def hits(self) -> int:
+        return self.reads - self.misses
+
+    def __str__(self) -> str:
+        return (
+            f"Closing: cache hits: {self.hits} cache misses: "
+            f"{self.misses} writes: {self.writes}"
+        )
+
+
+class BlockCache(defaultdict[int, bytes]):
+    """A caching interface to reading and writing blocks of data to a file.
+
+    Writes are cached and flushed to the file when the `flush()` or `close()`
+    methods are called. Writing blocks from the write cache is optimized by
+    joining contiguous blocks together into a single write operation.
+
+    The caching strategy provides significant performance improvements for
+    reading and writing to the flash storage of a serial-attached esp32
+    device."""
+
+    file: BinaryIO
+    block_size: int
+    write_cache: dict[int, bytes] | None
+    stats: CacheStats
+
+    def __init__(
+        self,
+        file: BinaryIO,
+        block_size: int = BLOCK_SIZE,
+        write_cache: bool = True,
+    ) -> None:
+        super().__init__()
+        self.file = file
+        self.block_size = block_size
+        self.write_cache = {} if write_cache else None
+        self.stats = CacheStats()
+
+    def __missing__(self, block: int) -> bytes:
+        """Reading from the cache failed, read the block from the file."""
+        self.stats.misses += 1
+        logger.debug(f"Read block {block} from file")
+        self.file.seek(block * self.block_size)
+        data = self.file.read(self.block_size)
+        super().__setitem__(block, data)  # Save in the read cache
+        return data
+
+    def __setitem__(self, block: int, data: bytes) -> None:
+        """Save the block data to the cache and write cache."""
+        assert len(data) == self.block_size, "Data must be a block size"
+        self.stats.writes += 1
+        if self.write_cache is not None:
+            logger.debug(f"Write block {block} to cache")
+            self.write_cache[block] = data  # Cache the write
+        else:
+            logger.debug(f"Write block {block} to file {self.file.name}")
+            self.file.seek(block * self.block_size)
+            self.file.write(data)
+        super().__setitem__(block, data)  # Save in the read cache
+
+    def __getitem__(self, key: int) -> bytes:
+        self.stats.reads += 1
+        return super().__getitem__(key)
+
+    def flush(self) -> None:
+        """Flush cached writes to the file."""
+        if not self.write_cache:
+            self.file.flush()
+            return
+
+        # Join contiguous blocks together into larger blocks for writing
+        def group_blocks(
+            items: Iterable[tuple[int, bytes]]
+        ) -> Iterable[tuple[int, bytes]]:
+            return (
+                # (start_block, concatenated_block_data)
+                (blocks.peek()[0], b"".join(data for _block_num, data in blocks))
+                for blocks in (
+                    more_itertools.peekable(group)
+                    for group in more_itertools.consecutive_groups(
+                        sorted(items),  # Sort by block number
+                        ordering=lambda item: item[0],  # key = block number
+                    )
+                )
+            )
+
+        for start_block, data in group_blocks(self.write_cache.items()):
+            nblocks = len(data) / self.block_size
+            log.debug(f"Writing {nblocks} blocks at {start_block}...")
+            self.file.seek(start_block * self.block_size)
+            self.file.write(data)
+        self.file.flush()
+        self.write_cache.clear()
+
+    def close(self) -> None:
+        """Flush the write cache to the file."""
+        if self.file.closed:
+            return
+        self.flush()
+        log.debug(str(self.stats))
+        self.clear()
+        self.file.flush()
+        self.file.close()
+
 
 # This is the UserContext implementation for the LittleFS filesystem
 # that uses a Python file object for IO operations.
@@ -43,41 +161,59 @@ BOOT_PY = """\
 class UserContextFile(UserContext):
     """Python IO file context for LittleFSv2"""
 
-    file: BinaryIO
+    block_cache: BlockCache
 
-    def __init__(self, file: BinaryIO) -> None:
-        self.file = file
+    def __init__(self, file: BinaryIO, block_size: int = BLOCK_SIZE) -> None:
+        self.block_cache = BlockCache(file, block_size)
+
+    def read_block(self, block: int) -> bytes:
+        return self.block_cache[block]
+
+    def write_block(self, block: int, data: bytes) -> None:
+        self.block_cache[block] = data
 
     def read(self, cfg: LFSConfig, block: int, off: int, size: int) -> bytearray:
-        logging.getLogger(__name__).debug(
-            "LFS Read : Block: %d, Offset: %d, Size=%d" % (block, off, size)
-        )
-        self.file.seek(block * cfg.block_size + off)
-        data = self.file.read(size)
-        return bytearray(data)
+        logger.debug("LFS Read : Block: %d, Offset: %d, Size=%d" % (block, off, size))
+        assert off == 0, "Read offset must be 0"
+        assert (
+            size == cfg.block_size == self.block_cache.block_size
+        ), "Read size must be block size"
+        start, end = block, block + (off + size) // cfg.block_size
+        data = b"".join(self.read_block(i) for i in range(start, end + 1))
+        return bytearray(data[off : off + size])
 
     def prog(self, cfg: "LFSConfig", block: int, off: int, data: bytes) -> int:
-        logging.getLogger(__name__).debug(
-            "LFS Prog : Block: %d, Offset: %d, Data=%r" % (block, off, data[:40])
+        logger.debug(
+            "LFS Prog : Block: %d, Offset: %d, Size=%d" % (block, off, len(data))
         )
-        self.file.seek(block * cfg.block_size + off)
-        self.file.write(data)
+        block_size = cfg.block_size
+        assert off == 0, "Write offset must be 0"
+        assert (
+            len(data) == block_size == self.block_cache.block_size
+        ), "Write size must be block size"
+        for i in range(len(data) // block_size):
+            self.write_block(
+                block + i,
+                data[i * block_size : (i + 1) * block_size],
+            )
+        return 0
+
+    def erase_block(self, block: int) -> int:
+        logger.debug("LFS Erase: Block: %d" % block)
+        self.write_block(block, b"\xff" * self.block_cache.block_size)
         return 0
 
     def erase(self, cfg: "LFSConfig", block: int) -> int:
-        logging.getLogger(__name__).debug("LFS Erase: Block: %d" % block)
-        self.file.seek(block * cfg.block_size)
-        self.file.write(b"\xff" * cfg.block_size)
-        return 0
+        self.erase_block(block)
+        return 0  # We dont need to erase blocks before writing blocks.
 
     def sync(self, cfg: "LFSConfig") -> int:
-        self.file.flush()
+        # sync is a no-op for the BlockCache
+        logger.debug("LFS Sync:")
         return 0
 
     def __del__(self):
-        if not self.file.closed:
-            self.file.flush()
-            self.file.close()
+        self.block_cache.close()
 
 
 def _is_file(fs: LittleFS, src: str | Path) -> bool:
@@ -99,6 +235,12 @@ def _get_file(fs: LittleFS, src: Path, dst: Path) -> None:
 
 def _put_file(fs: LittleFS, src: Path, dst: Path) -> None:
     """Copy a file from the local filesystem to the LittleFS filesystem."""
+    # Remove the destination file if it exists to make room before copying
+    # in case we are over-copying a very large file.
+    try:
+        fs.remove(dst.as_posix())
+    except FileNotFoundError:
+        pass
     with fs.open(dst.as_posix(), "wb") as f:
         f.write(src.read_bytes())
 
@@ -115,7 +257,7 @@ def _mkdir(fs: LittleFS, dst: Path) -> None:
 def littlefs(part: BinaryIO, block_count: int = 0) -> LittleFS:
     """Create a LittleFS filesystem object for a partition."""
     return LittleFS(
-        context=UserContextFile(part),
+        context=UserContextFile(part, BLOCK_SIZE),
         block_size=BLOCK_SIZE,
         block_count=block_count,
         mount=False,
@@ -207,7 +349,7 @@ class LFSCmd:
         """Remove a file or directory from the LittleFS filesystem."""
         for fs, name, part in self.vfs_files(self.args):
             log.action(f"rm '{part}:{name}':")
-            fs.remove(name, True)
+            fs.remove(name, recursive=True)
 
     def do_rename(self) -> None:
         """Rename a file or directory on the LittleFS filesystem."""

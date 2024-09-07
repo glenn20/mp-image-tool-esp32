@@ -99,7 +99,7 @@ usage = """
                         | set the log level for the named loggers.
     --check-app         | check app partitions and OTA config are valid
     --no-rollback       | disable app rollback after OTA update
-    --baud RATE         | baud rate for serial port (default: 460800)
+    --baud RATE         | baud rate for serial port (default: 921600)
     --ota-update FILE   | perform an OTA firmware upgrade over the serial port
     --from-csv FILE     | load new partition table from CSV file
     --table ota/default/original/NAME1=SUBTYPE:SIZE[,NAME2,...] \
