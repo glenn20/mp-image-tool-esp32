@@ -225,21 +225,22 @@ def redirect_stdout_stderr(name: str = "esptool") -> Generator[IO[str], None, No
     error = None
     try:
         yield out  # Pass the output as value of the contextmanager
+    except KeyboardInterrupt as e:
+        error = e
     except Exception as e:
         error = e
     finally:
         sys.stdout, sys.stderr = backupio
         stdout = "" if out.closed else out.getvalue()
         stderr = "" if err.closed else err.getvalue()
-
-    if error:
-        log.error(f"Error: {name} raises {type(err).__name__}")
-        log.warning(stderr)
-        log.warning(stdout)
-        raise error
-    else:
-        log.warning(stderr)
-        log.debug(stdout)
+        if error:
+            log.error(f"Error: {name} raises {type(err).__name__}")
+            log.warning(stderr)
+            log.warning(stdout)
+            raise error
+        else:
+            log.warning(stderr)
+            log.debug(stdout)
 
 
 # This is used to run esptool.py commands in a subprocess

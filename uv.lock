@@ -388,13 +388,23 @@ wheels = [
 ]
 
 [[package]]
+name = "more-itertools"
+version = "10.5.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/51/78/65922308c4248e0eb08ebcbe67c95d48615cc6f27854b6f2e57143e9178f/more-itertools-10.5.0.tar.gz", hash = "sha256:5482bfef7849c25dc3c6dd53a6173ae4795da2a41a80faea6700d9f5846c5da6", size = 121020 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/48/7e/3a64597054a70f7c86eb0a7d4fc315b8c1ab932f64883a297bdffeb5f967/more_itertools-10.5.0-py3-none-any.whl", hash = "sha256:037b0d3203ce90cca8ab1defbbdac29d5f993fc20131f3664dc8d6acfa872aef", size = 60952 },
+]
+
+[[package]]
 name = "mp-image-tool-esp32"
-version = "0.0.6.dev44+g2f4f7f2"
+version = "0.0.7.dev4+g3eb4128.d20240907"
 source = { editable = "." }
 dependencies = [
     { name = "colorama" },
     { name = "esptool" },
     { name = "littlefs-python" },
+    { name = "more-itertools" },
     { name = "tqdm" },
     { name = "typing-extensions" },
 ]
@@ -411,6 +421,7 @@ requires-dist = [
     { name = "colorama", specifier = ">=0.4.0" },
     { name = "esptool", specifier = ">=4.6.2" },
     { name = "littlefs-python", specifier = ">=0.12.0" },
+    { name = "more-itertools", specifier = ">=8.8.0" },
     { name = "tqdm", specifier = ">=4.66.1" },
     { name = "typing-extensions", specifier = ">=4.12" },
 ]
