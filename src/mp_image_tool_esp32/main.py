@@ -21,7 +21,7 @@ import shutil
 import sys
 import traceback
 from pathlib import Path
-from typing import Sequence
+from typing import List, Sequence
 
 from . import __version__, layouts, ota_update
 from . import logger as log
@@ -74,7 +74,7 @@ class TypedNamespace(argparse.Namespace):
     flash: str
     trim: bool
     trimblocks: bool
-    fs: list[list[str]]
+    fs: List[List[str]]
     _globals = globals()  # Used to access the module's global variables.
 
 

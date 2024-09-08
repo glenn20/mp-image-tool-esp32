@@ -13,11 +13,10 @@ on a firmware image file.
 from __future__ import annotations
 
 import os
-from collections import defaultdict
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO, Iterable, Iterator
+from typing import BinaryIO, DefaultDict, Iterable, Iterator
 
 import more_itertools
 from littlefs import LFSConfig, LFSStat, LittleFS, UserContext
@@ -59,7 +58,7 @@ class CacheStats:
         )
 
 
-class BlockCache(defaultdict[int, bytes]):
+class BlockCache(DefaultDict[int, bytes]):
     """A caching interface to reading and writing blocks of data to a file.
 
     Writes are cached and flushed to the file when the `flush()` or `close()`
