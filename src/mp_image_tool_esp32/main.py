@@ -166,7 +166,7 @@ def run_commands(argv: Sequence[str] | None = None) -> None:
     args = parser.parse_args(args=argv, namespace=namespace)
     progname = os.path.basename(sys.argv[0])
 
-    log.setLevel("DEBUG" if args.debug else "ERROR" if args.quiet else "INFO")
+    log.setLevel("ERROR" if args.quiet else "DEBUG" if args.debug else "INFO")
     if args.log:
         if str(args.log) == "show":
             log.info(
