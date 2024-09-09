@@ -48,8 +48,8 @@ firmware_file: Path = datadir / firmware_files[0]
 mpi_last_output: str = ""
 
 mockfs_dir = datadir / "mock-fs"
-
 assert mockfs_dir.exists(), f"Mock filesystem directory not found: {mockfs_dir}"
+
 
 # Class to add type annotations for command line options
 class Options(Namespace):
@@ -157,6 +157,19 @@ def mpi_run(firmware: Path, *args: str, output: Path | None = None) -> str:
     return res.stdout
 
 
+# Strip whitespace from front and end of each line
+def striplines(output: str) -> str:
+    return re.sub(r"\s*\n\s*", r"\n", output.strip())
+
+
+def check_output(expected: str, output: str) -> bool:
+    return striplines(expected) in striplines(output)
+
+
+def assert_output(expected: str, output: str) -> bool:
+    return striplines(expected) in striplines(output)
+
+
 @pytest.fixture(scope="session")
 def testdir(tmp_path_factory: Any) -> Path:
     """A fixture to create a temporary directory for testing (session scope).
@@ -228,19 +241,6 @@ def device() -> Path | None:
         mpi_run(firmware_file, "--flash", str(device))
 
     return device
-
-
-# Strip whitespace from front and end of each line
-def striplines(output: str) -> str:
-    return re.sub(r"\s*\n\s*", r"\n", output.strip())
-
-
-def check_output(expected: str, output: str) -> bool:
-    return striplines(expected) in striplines(output)
-
-
-def assert_output(expected: str, output: str) -> bool:
-    return striplines(expected) in striplines(output)
 
 
 @pytest.fixture
