@@ -19,11 +19,12 @@ from pathlib import Path
 from typing import BinaryIO, DefaultDict, Iterable, Iterator
 
 import more_itertools
-from littlefs import LFSConfig, LFSStat, LittleFS, UserContext
+from littlefs import LFSConfig, LFSStat, LittleFS, LittleFSError, UserContext
 
 from . import logger as log
-from .argtypes import B
+from .argtypes import B, IntArg
 from .firmware import Firmware
+from .partition_table import format_table
 
 BLOCK_SIZE: int = B  # The default block size (4096) for the LittleFS filesystem.
 
@@ -51,9 +52,9 @@ class CacheStats:
     def hits(self) -> int:
         return self.reads - self.misses
 
-    def __str__(self) -> str:
+    def summary(self) -> str:
         return (
-            f"Closing: cache hits: {self.hits} cache misses: "
+            f"cache hits: {self.hits} cache misses: "
             f"{self.misses} writes: {self.writes}"
         )
 
@@ -147,7 +148,7 @@ class BlockCache(DefaultDict[int, bytes]):
         if self.file.closed:
             return
         self.flush()
-        log.debug(str(self.stats))
+        log.debug(f"Closing: {self.stats.summary()}")
         self.clear()
         self.file.flush()
         self.file.close()
@@ -244,15 +245,6 @@ def _put_file(fs: LittleFS, src: Path, dst: Path) -> None:
         f.write(src.read_bytes())
 
 
-def _mkdir(fs: LittleFS, dst: Path) -> None:
-    """Create a directory on the LittleFS filesystem."""
-    try:
-        fs.mkdir(dst.as_posix())
-    except FileExistsError:
-        if not _is_dir(fs, dst):
-            raise FileExistsError(f"{dst} exists and is not a directory.")
-
-
 def littlefs(part: BinaryIO, block_count: int = 0) -> LittleFS:
     """Create a LittleFS filesystem object for a partition."""
     return LittleFS(
@@ -299,23 +291,77 @@ class LFSCmd:
         partname: str = "vfs"
         for *parts, name in (arg.rsplit(":", 1) for arg in names):
             partname = parts[0] if parts else partname
-            with self.firmware.partition(partname) as part:
-                with lfs_mounted(part) as fs:
-                    yield fs, name, partname
+            try:
+                with self.firmware.partition(partname) as part:
+                    with lfs_mounted(part) as fs:
+                        yield fs, name, partname
+            except (ValueError, LittleFSError):
+                # Skip partition if not present in firmware file or if no lfs
+                pass
+
+    def vfs_partitions(self, names: Iterable[str]) -> Iterator[tuple[LittleFS, str]]:
+        """A generator to yield LittleFS filesystems for a list of partition names.
+        Yields a tuple of the filesystem, the file name, and the partition
+        name."""
+        vfs_parts = list(names) or (
+            p for p in self.firmware.table if p.subtype_name == "fat"
+        )
+        for part in vfs_parts:
+            try:
+                with self.firmware.partition(part) as p:
+                    with lfs_mounted(p) as fs:
+                        yield fs, p.part.name
+            except (ValueError, LittleFSError):
+                # Skip partition if not present in firmware file or if no lfs
+                pass
 
     def do_info(self) -> None:
         """Print information about the LittleFS filesystem."""
-        for fs, _name, _part in self.vfs_files(self.args or ["/"]):
+        for fs, part in self.vfs_partitions(self.args):
             fs_size = fs.cfg.block_size * fs.block_count
             fstat = fs.fs_stat()
             v = fstat.disk_version
             version = f"{v >> 16}.{v & 0xFFFF}"
-            print("LittleFS Configuration:")
-            print(f"  Block Size:  {fs.cfg.block_size:9d}  /  0x{fs.cfg.block_size:X}")
-            print(f"  Image Size:  {fs_size:9d}  /  0x{fs_size:X}")
-            print(f"  Block Count: {fs.block_count:9d}")
-            print(f"  Name Max:    {fs.cfg.name_max:9d}")
+            print(f"Filesystem '{part}': LittleFS")
             print(f"  Disk Version:{version:>9s}")
+            print(f"  Name Max:    {fs.cfg.name_max:9d}")
+            print(f"  Image Size:  {fs_size:9d}  /  0x{fs_size:X}")
+            print(f"  Block Size:  {fs.cfg.block_size:9d}  /  0x{fs.cfg.block_size:X}")
+            print(f"  Blocks Total:{fs.block_count:9d}")
+            print(f"  Blocks Used: {fs.used_block_count:>9d}")
+            print(f"  Blocks Free: {fs.block_count-fs.used_block_count:>9d}")
+
+    def do_df(self) -> None:
+        """Print size and usage information about the LittleFS filesystem."""
+        table = format_table(
+            "  {:14s} {:>9d} {:>8d} {:>9d} {:>5.0f}% {:>10,d} kB",
+            "Filesystem 4K-blocks Used Available Use Free".split(),
+            (
+                (
+                    name,
+                    fs.block_count,
+                    fs.used_block_count,
+                    fs.block_count - fs.used_block_count,
+                    100 * fs.used_block_count / fs.block_count,
+                    (fs.block_count - fs.used_block_count) * BLOCK_SIZE // 1024,
+                )
+                for fs, name in self.vfs_partitions(self.args)
+            ),
+        )
+        print(table)
+
+    def do_grow(self) -> None:
+        """Resize/grow the LittleFS filesystem."""
+        name, size = (
+            (self.args or ["vfs"])[0],
+            (int(IntArg(self.args[1])) if len(self.args) > 1 else 0),
+        )
+        with self.firmware.partition(name) as p:
+            with lfs_mounted(p) as fs:
+                old, new = fs.block_count, size or p.part.size // BLOCK_SIZE
+                log.action(f"fs: grow '{name}' from {old} to {new} blocks")
+                if err := fs.fs_grow(new):
+                    raise LittleFSError(err)
 
     def do_ls(self) -> None:
         """Recursively list the contents of a directory on the LittleFS filesystem."""
@@ -342,7 +388,7 @@ class LFSCmd:
         """Create a directory on the LittleFS filesystem."""
         for fs, name, part in self.vfs_files(self.args):
             log.action(f"mkdir '{part}:{name}':")
-            _mkdir(fs, Path(name))
+            fs.makedirs(name, exist_ok=True)
 
     def do_rm(self) -> None:
         """Remove a file or directory from the LittleFS filesystem."""
@@ -408,7 +454,7 @@ class LFSCmd:
 
                 dest /= source.name
                 print(f"{source} -> {dest}")
-                _mkdir(fs, dest)
+                fs.makedirs(dest.as_posix(), exist_ok=True)
                 for srcdir, dirs, files in os.walk(str(source)):
                     srcdir = Path(srcdir)
                     dstdir = dest / srcdir.relative_to(source)
@@ -417,7 +463,7 @@ class LFSCmd:
                         _put_file(fs, src, dst)
                     for src, dst in ((srcdir / f, dstdir / f) for f in dirs):
                         print(f"{src}/ -> {dst}/")
-                        _mkdir(fs, dst)
+                        fs.makedirs(dst.as_posix(), exist_ok=True)
 
     def do_mkfs(self) -> None:
         """Create a new LittleFS filesystem on a partition.
@@ -439,7 +485,6 @@ class LFSCmd:
                     del fs
 
 
-def lfs_cmd(firmware: Firmware, command: str, args: list[str]) -> None:
+def lfs_cmd(firmware: Firmware, command: str, args: list[str] = []) -> None:
     """A command line processor for LittleFS filesystem operations."""
-    cmd_processor = LFSCmd(firmware)
-    cmd_processor.run_command(command, args)
+    LFSCmd(firmware).run_command(command, args)

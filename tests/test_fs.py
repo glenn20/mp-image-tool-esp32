@@ -57,6 +57,17 @@ def test_mkfs(mock_device: Path) -> None:
     mpi_check_ls(mock_device, "-q --fs mkfs vfs")
 
 
+def test_df(mock_device: Path) -> None:
+    mpi_check(mock_device, "-q --fs df vfs")
+
+
+def test_grow(mock_device: Path) -> None:
+    with mock_device.open("r+b") as f:
+        f.seek(0, 2)
+        f.write(b"\xff" * (2 * 1024 * 1024))
+    mpi_check(mock_device, "-q -f 6M --resize vfs=0 --fs grow --fs df")
+
+
 def test_get(mock_device: Path) -> None:
     """Download a file and compare to the original."""
     mpi_run(mock_device, "-q --fs get /boot.py")

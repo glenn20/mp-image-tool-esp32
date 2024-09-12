@@ -127,3 +127,11 @@
 
 -q --fs mkfs vfs: |
   boot.py
+
+-q --fs df vfs: |
+  # Filesystem     4K-blocks     Used Available   Use%       Free kB
+    vfs                  512        9       503     2%      2,012 kB
+
+-q -f 6M --resize vfs=0 --fs grow --fs df: |
+  # Filesystem     4K-blocks     Used Available   Use%       Free kB
+    vfs                 1024        9      1015     1%      4,060 kB

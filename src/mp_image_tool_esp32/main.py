@@ -138,12 +138,13 @@ usage = """
     Where SIZE is a decimal or hex number with an optional suffix (M=megabytes,
     K=kilobytes, B=blocks (0x1000=4096 bytes)).
 
-    --fs commands include: ls, get, put, mkdir, rm, rename, cat, info, mkfs, and more.
+    --fs commands include: ls, get, put, mkdir, rm, rename, cat, info, mkfs,
+    df, grow and more.
 
     Options --erase-fs and --ota-update can only be used when operating on
     serial-attached devices (not firmware files).
 
-    If the --flash options is provided, the firmware (including any changes
+    If the --flash option is provided, the firmware (including any changes
     made) will be flashed to the device, eg:
 
        `mp-image-tool-esp32 firmware.bin --flash u0`
@@ -204,6 +205,8 @@ def run_commands(argv: Sequence[str] | None = None) -> None:
         firmware.file.seek(firmware.bootloader)
     if log.isloglevel("info"):
         layouts.print_table(firmware.table, app_size)
+        if firmware.is_device and not args.fs:
+            lfs_cmd(firmware, "df")  # Display filesystem usage information
 
     ## Process requested changes to the firmware file (esp. partition table)
 
@@ -401,10 +404,10 @@ def run_commands(argv: Sequence[str] | None = None) -> None:
     firmware.file.close()
 
 
-def main() -> int:
+def main(argv: Sequence[str] | None = None) -> int:
     try:
         log.setLevel("DEBUG" if "-d" in sys.argv or "--debug" in sys.argv else "INFO")
-        run_commands(sys.argv[1:])
+        run_commands(argv)
     except (KeyboardInterrupt, Exception) as err:
         log.error(f"{type(err).__name__}: {err}")
         if log.isloglevel("debug"):

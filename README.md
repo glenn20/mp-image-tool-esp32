@@ -247,6 +247,7 @@ filesystem used by micropython).
 
 The available fs comands are:
 
+- `--fs df`: List current usage of filesystems.
 - `--fs ls /lib /data`: Recursively list the files in the `/lib` and `/data`
   directories of the `vfs` partition.
 - `--fs get /lib /data backup`: Recursively copy `/lib` and `/data`
@@ -259,6 +260,11 @@ The available fs comands are:
 - `--fs rename app.py main.py`: Rename files on the device.
 - `--fs mkfs vfs`: Create a new littlefsv2 filesystem on the `vfs` partition
   (will erase the partition first).
+- `--fs grow [blocks]`: Grow the filesystem to fill the partition or to the
+  requested number of 4K-blocks.
+  - Note: micropython will not mount a filesystem unless it uses all the
+    space in the partition. Use this after `--resize` to grow a
+    filesystem partition.
 
 Filenames on the device can be prefixed with a partition name to operate on a
 filesystem partition other than `vfs`, eg. `--fs ls vfs2:/recordings`.
@@ -375,18 +381,24 @@ mp-image-tool-esp32 --write factory=ESP32_GENERIC-20231005-v1.21.0.app-bin
 ## Usage
 
 ```text
-usage: mp-image-tool-esp32 [-h] [-o FILE] [-q] [-d] [-n] [-x] [-f SIZE] [-a SIZE] [-m METHOD]
-                           [--check-app] [--no-rollback] [--baud RATE] [--ota-update FILE]
-                           [--from-csv FILE] [--table ota/default/NAME1=SUBTYPE:SIZE[,NAME2,...]]
-                           [--delete NAME1[,NAME2]] [--add NAME1:SUBTYPE:OFFSET:SIZE[,NAME2,...]]
-                           [--resize NAME1=SIZE1[,NAME2=SIZE2]] [--erase NAME1[,NAME2]]
-                           [--erase-fs NAME1[,NAME2]]
+usage: mp-image-tool-esp32 [-h] [-o FILE] [-q] [-n] [-x] [-f SIZE] [-a SIZE]
+                           [-m METHOD] [-d]
+                           [--log NAME=LEVEL[,NAME=LEVEL,...]] [--check-app]
+                           [--no-rollback] [--baud RATE] [--ota-update FILE]
+                           [--from-csv FILE]
+                           [--table ota/default/original/NAME1=SUBTYPE:SIZE[,NAME2,...]]
+                           [--delete NAME1[,NAME2]]
+                           [--add NAME1:SUBTYPE:OFFSET:SIZE[,NAME2,...]]
+                           [--resize NAME1=SIZE1[,NAME2=SIZE2]]
+                           [--erase NAME1[,NAME2]] [--erase-fs NAME1[,NAME2]]
                            [--read NAME1=FILE1[,NAME2=FILE2,bootloader=FILE,...]]
                            [--write NAME1=FILE1[,NAME2=FILE2,bootloader=FILE,...]]
-                           [--flash DEVICE]
+                           [--flash DEVICE] [--trimblocks] [--trim]
+                           [--fs CMD [CMD ...]]
                            filename
 
-Tool for manipulating MicroPython esp32 firmware files and flash storage on esp32 devices.
+Tool for manipulating MicroPython esp32 firmware files and flash storage on
+esp32 devices.
 
 positional arguments:
   filename              the esp32 firmware filename or serial device
@@ -395,8 +407,7 @@ options:
   -h, --help            show this help message and exit
   -o FILE, --output FILE
                         output firmware filename (auto-generated if not given)
-  -q, --quiet           set debug level to WARNING (default: INFO)
-  -d, --debug           set debug level to DEBUG (default: INFO)
+  -q, --quiet           set debug level to ERROR (default: INFO)
   -n, --no-reset        leave device in bootloader mode afterward
   -x, --extract-app     extract .app-bin from firmware
   -f SIZE, --flash-size SIZE
@@ -404,38 +415,58 @@ options:
   -a SIZE, --app-size SIZE
                         size of factory and ota app partitions
   -m METHOD, --method METHOD
-                        esptool method: subprocess, command or direct (default)
+                        esptool method: subprocess, command or direct
+                        (default)
+  -d, --debug           set debug level to DEBUG (default: INFO)
+  --log NAME=LEVEL[,NAME=LEVEL,...]
+                        set the log level for the named loggers.
   --check-app           check app partitions and OTA config are valid
   --no-rollback         disable app rollback after OTA update
-  --baud RATE           baud rate for serial port (default: 460800)
+  --baud RATE           baud rate for serial port (default: 921600)
   --ota-update FILE     perform an OTA firmware upgrade over the serial port
   --from-csv FILE       load new partition table from CSV file
   --table ota/default/original/NAME1=SUBTYPE:SIZE[,NAME2,...]
-                        create new partition table, eg: "--table ota" (install an OTA-enabled
-                        partition table), "--table default" (default (non-OTA) partition table),
-                        "--table nvs=7B,factory=2M,vfs=0". SUBTYPE is optional in most cases
-                        (inferred from name).
+                        create new partition table, eg: "--table ota" (install
+                        an OTA-enabled partition table), "--table default"
+                        (default (non-OTA) partition table), "--table
+                        nvs=7B,factory=2M,vfs=0". SUBTYPE is optional in most
+                        cases (inferred from name).
   --delete NAME1[,NAME2]
                         delete the named partitions
   --add NAME1:SUBTYPE:OFFSET:SIZE[,NAME2,...]
                         add new partitions to table
   --resize NAME1=SIZE1[,NAME2=SIZE2]
-                        resize partitions eg. --resize factory=2M,nvs=5B,vfs=0. If SIZE is 0,
-                        expand partition to available space
+                        resize partitions eg. --resize
+                        factory=2M,nvs=5B,vfs=0. If SIZE is 0, expand
+                        partition to available space
   --erase NAME1[,NAME2]
                         erase the named partitions
   --erase-fs NAME1[,NAME2]
-                        erase first 4 blocks of a partition on flash storage. Micropython will
-                        initialise filesystem on next boot.
+                        erase first 4 blocks of a partition on flash storage.
+                        Micropython will initialise filesystem on next boot.
   --read NAME1=FILE1[,NAME2=FILE2,bootloader=FILE,...]
-                        copy partition contents (or bootloader) to file.
+                        copy partition contents (or bootloader) to file. Use
+                        --trimblocks or --trim to remove trailing blank
+                        blocks.
   --write NAME1=FILE1[,NAME2=FILE2,bootloader=FILE,...]
-                        write file(s) contents into partitions (or bootloader) in the firmware.
+                        write file(s) contents into partitions (or bootloader)
+                        in the firmware.
   --flash DEVICE        flash new firmware to the serial-attached device.
+  --trimblocks          Remove trailing blank blocks from data returned by
+                        --read and --extract-app. This is useful for reading
+                        app images and filesystems from flash storage.
+  --trim                Like --trimblocks, but trims to 16-byte boundary. This
+                        is appropriate for reading app images from flash
+                        storage.
+  --fs CMD [CMD ...]    Operate on files in the `vfs` or other filesystem
+                        partitions.
 
-Where SIZE is a decimal or hex number with an optional suffix (M=megabytes, K=kilobytes, B=blocks
-(0x1000=4096 bytes)). Options --erase-fs and --ota-update can only be used when operating on
-serial-attached devices (not firmware files). If the --flash options is provided, the firmware
-(including any changes made) will be flashed to the device, eg: `mp-image-tool-esp32 firmware.bin
---flash u0` is a convenient way to flash firmware to a device.
+Where SIZE is a decimal or hex number with an optional suffix (M=megabytes,
+K=kilobytes, B=blocks (0x1000=4096 bytes)). --fs commands include: ls, get,
+put, mkdir, rm, rename, cat, info, mkfs, df and grow. Options --erase-fs and
+--ota-update can only be used when operating on serial-attached devices (not
+firmware files). If the --flash option is provided, the firmware (including
+any changes made) will be flashed to the device, eg: `mp-image-tool-esp32
+firmware.bin --flash u0` is a convenient way to flash firmware to a device.
+
 ```
