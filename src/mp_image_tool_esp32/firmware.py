@@ -211,10 +211,23 @@ class Firmware:
                 oldp = next(oldparts, None)
             if not oldp:
                 continue
-            if newp.type_name == "data" and oldp != newp and newp.offset < self.size:
-                log.action(f"Erasing data partition: {newp.name}...")
-                with self.partition(newp) as part:
-                    part.erase(min(newp.size, 4 * self.BLOCKSIZE))
+            if newp.type_name == "data" and newp != oldp and newp.offset < self.size:
+                if (
+                    newp.subtype_name == "fat"
+                    and newp.type == oldp.type
+                    and newp.subtype == oldp.subtype
+                    and newp.offset == oldp.offset
+                    and newp.size > oldp.size
+                ):
+                    log.warning(
+                        f"Filesystem partition has increased in size. "
+                        "Micropython will fail to mount the filesystem on reboot."
+                        f"Use '--fs grow {newp.name}' to repair."
+                    )
+                else:
+                    log.action(f"Erasing data partition: {newp.name}...")
+                    with self.partition(newp) as part:
+                        part.erase(min(newp.size, 4 * self.BLOCKSIZE))
 
     def update_bootloader(self) -> None:
         """Update the bootloader header and hash, if it has changed."""

@@ -167,7 +167,7 @@ class FirmwareDeviceIO(BinaryIO):
 
     def close(self) -> None:
         if self._reset_on_close:
-            log.action("Resetting out of bootloader mode using RTS pin...")
+            log.debug("Resetting out of bootloader mode using RTS pin...")
             self.esptool.hard_reset()
         else:
             log.action("Leaving device in bootloader mode...")
