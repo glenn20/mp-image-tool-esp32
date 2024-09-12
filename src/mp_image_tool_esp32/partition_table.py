@@ -85,11 +85,11 @@ def _human(size: int) -> str:
 
 
 # Return a formatted data table as a string
-def _make_table(
+def format_table(
     format: str, header: Iterable[str], data: Iterable[Iterable[Any]]
 ) -> str:
     # Make a format string for the header fields, which are all strings.
-    hdr_format = re.sub(r":([^#}]*)#?([0-9]*).?([0-9]*)\w}", r":\1\2s}", format)
+    hdr_format = re.sub(r":([^#}0-9.]*)#?(\d*)[.]?(\d*,?)\w}", r":\1\2s}", format)
     if hdr_format.startswith(" "):
         hdr_format = f"#{hdr_format[1:]}"
     return "\n".join(
@@ -180,7 +180,7 @@ class PartitionTable(List[PartitionEntry]):
             )
             for p in self
         )
-        return _make_table(format, header, data)
+        return format_table(format, header, data)
 
     @staticmethod
     def from_bytes(data: bytes, max_size: int = 0) -> PartitionTable:
