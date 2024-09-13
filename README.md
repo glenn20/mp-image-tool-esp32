@@ -40,7 +40,7 @@ Micropython app fills 78.8% of factory partition (421 kB free)
   - `mp-image-tool-esp32 ESP32_GENERIC-20231005-v1.21.0.bin` or
   - `mp-image-tool-esp32 /dev/ttyUSB0` (Linux) or
   - `mp-image-tool-esp32 COM1` (Windows)
-- Change the size of the flash storage for the firmware file:
+- Change the size of the flash storage programmed into the firmware header:
   - `--resize-flash 8M` or `-f 8M`
 - Rewrite or modify the partition table:
   - `--table ota` : install an OTA-enabled partition table
@@ -83,13 +83,12 @@ following additional commands are available:
   partition:
   - `--fs ls` will list all the files on the device filesystem
   - `--fs get . backup` will copy all the files on the device filesystem to
-    `backup`
-    on the local computer
+    `backup` on the local computer
   - `--fs put backup/* /` will copy all the files from `backup` onto the
     device filesystem .
     - See [below](#filesystem-operations) for more filesystem operations
 - Erase 'vfs' filesystem partitions:
-  - `--erase-fs vfs` : erases the first 4 blocks of the partition
+  - `--erase vfs` : erases the `vfs` partition
     - micropython will automatically build a fresh filesystem on the next boot
 - Use the `OTA` mechanism to perform a micropython firmware update over the
   serial interface to the device:
@@ -107,6 +106,12 @@ automatically erase any `data` partitions (eg. `nvs`, `otadata` or `vfs/fat`)
 which have been moved or resized. Generally, micropython will re-initialise
 these `data` partitions on next boot. This prevents micropython attempting to
 mount what appears to be a corrupt filesystem or nvs partition.
+
+- Note: Since version 0.0.7, `mp-image-tool-esp32` will not automatically erase
+  filesytem partitions that have been **increased** in size. Micropython will
+  complain that the filesystem is corrupt on reboot because the filesystem does
+  not match the partition size, but this can be repaired with `--fs grow vfs` or
+  use `--erase vfs` to forcibly erase the partition.
 
 `mp-image-tool-esp32` uses the
 [`esptool.py`](https://github.com/espressif/esptool) program to perform the
@@ -242,8 +247,10 @@ Updating otadata partition...
 ## Filesystem Operations
 
 `mp_image_tool_esp32` can be used to access and manipulate files installed on
-the device filesystems. Only `littlefsv2` filesystems are supported (the default
-filesystem used by micropython).
+the `littlefsv2` filesystems, the default filesystem used by micropython on the
+device flash storage (FAT filesystems are not supported). `mp_image_tool_esp32`
+uses the [`littlefs-python`](https://github.com/jrast/littlefs-python) package
+to operate on these filesystems.
 
 The available fs comands are:
 
@@ -260,11 +267,11 @@ The available fs comands are:
 - `--fs rename app.py main.py`: Rename files on the device.
 - `--fs mkfs vfs`: Create a new littlefsv2 filesystem on the `vfs` partition
   (will erase the partition first).
-- `--fs grow [blocks]`: Grow the filesystem to fill the partition or to the
+- `--fs grow [vfs [blocks]]`: Grow the filesystem to fill the partition or to the
   requested number of 4K-blocks.
-  - Note: micropython will not mount a filesystem unless it uses all the
-    space in the partition. Use this after `--resize` to grow a
-    filesystem partition.
+  - Note: micropython will not mount a filesystem unless it uses all the space
+    in the partition. Use this after you have used `--resize` to increase the
+    size of a filesystem partition.
 
 Filenames on the device can be prefixed with a partition name to operate on a
 filesystem partition other than `vfs`, eg. `--fs ls vfs2:/recordings`.
@@ -274,12 +281,13 @@ not through the micropython repl. Some operations may be much faster using
 this method, though the current implementation does not yet support block
 caching which should provide further performance improvements.
 
-`mp_image_tool_esp32` uses the
-[`littlefs-python`](https://github.com/jrast/littlefs-python) package to operate
-on the filesystems.
+Eg. `mp-image-tool-esp32 a0 --fs mkfs vfs --fs put ./rootfs/* /` will create
+a new littlefs filesystem on the 'vfs' partition and initialise it with the
+files from `./rootfs/` on the local computer.
 
-You can also use `littlefs-python` to build filesystem partitions on your
-computer and flash them to the device, eg:
+You can also use [`littlefs-python`](https://github.com/jrast/littlefs-python)
+to build filesystem partitions on your computer and flash them to the device,
+eg:
 
 ```bash
 littlefs-python create --compact --no-pad --block-size 4096 --fs-size=2mb ./root-fs vfs.bin
