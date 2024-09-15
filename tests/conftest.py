@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import importlib
 import os
 import re
 import shlex
 import shutil
 import subprocess
+import warnings
 from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
+import mp_image_tool_esp32
 import pytest
 from _pytest.config import Config
 
@@ -49,6 +52,9 @@ mpi_last_output: str = ""
 
 mockfs_dir = datadir / "mock-fs"
 assert mockfs_dir.exists(), f"Mock filesystem directory not found: {mockfs_dir}"
+
+capsys_: pytest.CaptureFixture[str] | None = None
+caplog_: pytest.LogCaptureFixture | None = None
 
 
 # Class to add type annotations for command line options
@@ -132,8 +138,17 @@ def pytest_configure(config: Config):
     print("Using firmware file:", firmware_file.name)
 
 
-# Run the mp-image-tool-esp32 command and return the output
-def mpi_run(firmware: Path, *args: str, output: Path | None = None) -> str:
+@pytest.fixture(autouse=True)
+def my_setup(
+    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
+):
+    global capsys_, caplog_
+    capsys_ = capsys
+    caplog_ = caplog
+
+
+def _mpi_run(firmware: Path, *args: str, output: Path | None = None) -> None:
     """Execute the mp-image-tool-esp32 command with the given arguments.
     Returns the output of the command as a string."""
     outputfile = output or Path("_test_output.bin")
@@ -143,31 +158,49 @@ def mpi_run(firmware: Path, *args: str, output: Path | None = None) -> str:
     cmd = shlex.split(" ".join(cmd))
     if options.show:
         print("Command:", " ".join(cmd))
-    res = subprocess.run(cmd, capture_output=True, text=True)
-    if options.show or res.returncode != 0:
-        print(res.stdout)
-        print(res.stderr)
-        if res.returncode != 0:
-            raise subprocess.CalledProcessError(res.returncode, cmd)
+    importlib.reload(mp_image_tool_esp32)
+    assert mp_image_tool_esp32.main(cmd[1:]) == 0
+    # subprocess.run(cmd)
     if not output and outputfile.exists() and firmware.parent == Path("."):
         # Replace the firmware file with the output file
         os.rename(outputfile, firmware)
-    global mpi_last_output
-    mpi_last_output = res.stdout
-    return res.stdout
+
+
+def mpi_run(firmware: Path, *args: str, output: Path | None = None) -> str:
+    assert capsys_ is not None
+    _ = capsys_.readouterr().out
+    _mpi_run(firmware, *args, output=output)
+    stdout = capsys_.readouterr().out
+    return stdout
+
+
+def log_messages() -> str:
+    assert caplog_ is not None
+    return "\n".join([record[2] for record in caplog_.record_tuples])
 
 
 # Strip whitespace from front and end of each line
 def striplines(output: str) -> str:
-    return re.sub(r"\s*\n\s*", r"\n", output.strip())
+    with warnings.catch_warnings():
+        # Suppress the warning about possible nested sets in the regex
+        warnings.simplefilter("ignore")
+        return re.sub(
+            r"\s*\n\s*",
+            r"\n",
+            re.sub(
+                "\x1b[[0-9;]*m",
+                "",
+                output.strip(),
+            ),
+        )
 
 
 def check_output(expected: str, output: str) -> bool:
     return striplines(expected) in striplines(output)
 
 
-def assert_output(expected: str, output: str) -> bool:
-    return striplines(expected) in striplines(output)
+def assert_output(expected: str, output: str) -> None:
+    assert striplines(expected) in striplines(output)
 
 
 @pytest.fixture(scope="session")
@@ -238,7 +271,7 @@ def device() -> Path | None:
     device = Path(expand_device_short_names(options.port))
     if options.flash:
         # Flash default firmware to the device
-        mpi_run(firmware_file, "--flash", str(device))
+        _mpi_run(firmware_file, "--flash", str(device))
 
     return device
 
@@ -278,12 +311,13 @@ def bootloader(firmwarefile: Path) -> bytes:
     return firmwarefile.read_bytes()[:BOOTLOADER_SIZE].rstrip(b"\xFF")
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture()
 def app_image(firmwarefile: Path) -> bytes:
     """A fixture to extract the application image from a firmware file.
     The application image is returned as a bytes object."""
     output = mpi_run(firmwarefile)
-    match = re.search(r"Found (esp32\w*) firmware file", output)
+    print("Output: ", output)
+    match = re.search(r"Found (esp32\w*) firmware file", log_messages())
     if not match:
         pytest.exit("Could not find firmware type in output:\n" + output)
     chip_name = match.group(1)

@@ -8,3 +8,4 @@ access to flash storage on serial-attached ESP32 devices.
 """
 
 from mp_image_tool_esp32._version import __version__ as __version__
+from mp_image_tool_esp32.main import main as main

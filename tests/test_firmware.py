@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import hashlib
-import platform
-import re
 from pathlib import Path
 
 import pytest
 import yaml
 
-from .conftest import assert_output, mpi_run, options
+from .conftest import assert_output, log_messages, mpi_run, options
 
 rootdir = Path(__file__).parent.parent
 test_outputs = rootdir / "tests" / "test_outputs.yaml"
@@ -28,11 +26,12 @@ def mpi_check_output(firmware: Path, args: str) -> None:
     assert_output(OUTPUTS[args], output)
 
 
-def test_python_version(firmware: Path):
-    output = mpi_run(firmware, "")
-    match = re.search(r"Running mp-image-tool-esp32 .*Python ([0-9.]+)", output)
-    assert match is not None
-    assert match.group(1) == platform.python_version()
+# Unnecessary if running mp_image_tool_esp32 as a module rather than a script
+# def test_python_version(firmware: Path):
+#     mpi_run(firmware)
+#     match = re.search(r"Running pytest .*Python ([0-9.]+)", log_messages())
+#     assert match is not None
+#     assert match.group(1) == platform.python_version()
 
 
 def test_firmware_file_valid(firmware: Path):
@@ -132,7 +131,8 @@ def test_extract_app(firmware: Path, app_image: bytes):
 
 
 def test_check_app(firmware: Path, app_image: bytes, bootloader: bytes):
-    output = mpi_run(firmware, "--check-app")
+    mpi_run(firmware, "--check-app")
+    output = log_messages()
     for line in (
         "Partition 'bootloader': App image signature found.",
         f"Partition 'bootloader': Hash confirmed (size={len(bootloader)}).",
