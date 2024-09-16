@@ -16,9 +16,11 @@ Provides:
 
 import csv
 
-from . import logger as log
+from . import logger
 from .argtypes import KB, MB, PartList
 from .partition_table import PartitionError, PartitionTable
+
+log = logger.getLogger(__name__)
 
 # Recommended size for OTA app partitions (depends on flash_size).
 # These choices match OTA partition sizes in ports/esp32/partition-*-ota.csv.
@@ -120,16 +122,11 @@ def from_csv(table: PartitionTable, filename: str) -> PartitionTable:
 
 def print_table(table: PartitionTable, app_size: int = 0) -> None:
     """Print a detailed description of the partition table."""
-    colors = dict(c=log.CYAN, r=log.RED)
-
-    print(log.CYAN, end="")
-    print(
-        "{c}Partition table (flash size: {r}{size}MB{c}):".format(
-            size=table.max_size // MB, **colors
-        )
+    size = table.max_size // MB
+    logger.console.print(
+        f"[cyan]Partition table (flash size: [red]{size}MB[/red]):\n"
+        f"{table}"  # fmt: off
     )
-    print(table)
-    print(log.RESET, end="")
     if table.app_part and app_size:
         print(
             "Micropython app fills {used:0.1f}% of {app} partition "

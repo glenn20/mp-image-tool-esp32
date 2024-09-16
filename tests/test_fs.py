@@ -5,7 +5,7 @@ from pathlib import Path
 
 import yaml
 
-from .conftest import mockfs_dir, mpi_run
+from .conftest import assert_output, mockfs_dir, mpi_run
 
 rootdir = Path(__file__).parent.parent
 test_outputs = rootdir / "tests" / "test_outputs.yaml"
@@ -17,12 +17,12 @@ with open(test_outputs) as f:
 def mpi_check_ls(firmware: Path, args: str) -> None:
     mpi_run(firmware, args)
     output = mpi_run(firmware, "-q --fs ls")
-    assert OUTPUTS[args] == output
+    assert_output(OUTPUTS[args], output)
 
 
 def mpi_check(firmware: Path, args: str) -> None:
     output = mpi_run(firmware, args)
-    assert OUTPUTS[args] == output
+    assert_output(OUTPUTS[args], output)
 
 
 # The mock device firmware is a 4MB firmware file with a 2MB littlefsv2

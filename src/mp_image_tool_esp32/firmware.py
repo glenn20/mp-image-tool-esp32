@@ -16,11 +16,13 @@ firmware files.
 
 from __future__ import annotations
 
-from . import logger as log
+from . import logger
 from .argtypes import MB, B
 from .firmware_fileio import FirmwareDeviceIO, FirmwareFileIO, Partition
 from .image_header import ImageHeader
 from .partition_table import PartitionEntry, PartitionTable
+
+log = logger.getLogger(__name__)
 
 BLOCKSIZE = B  # Block size for erasing/writing regions of the flash storage
 

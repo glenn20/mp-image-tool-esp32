@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import logging
 import os
 import re
 import shlex
@@ -146,6 +147,7 @@ def my_setup(
     global capsys_, caplog_
     capsys_ = capsys
     caplog_ = caplog
+    caplog.set_level(logging.INFO, logger="mp_image_tool_esp32")
 
 
 def _mpi_run(firmware: Path, *args: str, output: Path | None = None) -> None:
@@ -200,7 +202,9 @@ def check_output(expected: str, output: str) -> bool:
 
 
 def assert_output(expected: str, output: str) -> None:
-    assert striplines(expected) in striplines(output)
+    expected = striplines(expected)
+    output = striplines(output)
+    assert expected in output, f"Expected:\n{expected}\nOutput:\n{output}"
 
 
 @pytest.fixture(scope="session")
@@ -316,7 +320,6 @@ def app_image(firmwarefile: Path) -> bytes:
     """A fixture to extract the application image from a firmware file.
     The application image is returned as a bytes object."""
     output = mpi_run(firmwarefile)
-    print("Output: ", output)
     match = re.search(r"Found (esp32\w*) firmware file", log_messages())
     if not match:
         pytest.exit("Could not find firmware type in output:\n" + output)

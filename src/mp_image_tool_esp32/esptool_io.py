@@ -23,6 +23,7 @@ All esptool.py commands and output are logged to the DEBUG facility.
 from __future__ import annotations
 
 import io
+import logging
 import re
 import shlex
 import sys
@@ -38,11 +39,12 @@ import esptool
 import esptool.cmds
 import esptool.util
 import tqdm
-from colorama import Fore
 from typing_extensions import Buffer
 
-from . import logger as log
+from . import logger
 from .argtypes import KB, MB, B
+
+log = logger.getLogger(__name__)
 
 BAUDRATES = (115200, 230400, 460800, 921600, 1500000, 2000000, 3000000)
 BAUDRATE = 921600  # Default baudrate for esptool.py
@@ -102,14 +104,6 @@ tqdm_args: dict[str, Any] = dict(
     delay=0,
     file=sys.__stderr__,
     dynamic_ncols=True,
-    ascii=" =",
-    bar_format=(
-        Fore.CYAN
-        + "{l_bar}{bar}| "
-        + Fore.GREEN
-        + "{n:,}/{total:,}kB {rate_fmt}"
-        + Fore.RESET
-    ),
 )
 
 # Regexp to match progress messages printed out by esptool.py
@@ -235,12 +229,16 @@ def redirect_stdout_stderr(name: str = "esptool") -> Generator[IO[str], None, No
         stderr = "" if err.closed else err.getvalue()
         if error:
             log.error(f"Error: {name} raises {type(err).__name__}")
-            log.warning(stderr)
-            log.warning(stdout)
+            if stderr:
+                log.warning(stderr)
+            if stdout:
+                log.warning(stdout)
             raise error
         else:
-            log.warning(stderr)
-            log.debug(stdout)
+            if stderr:
+                log.warning(stderr)
+            if stdout:
+                log.debug(stdout)
 
 
 # This is used to run esptool.py commands in a subprocess
@@ -253,7 +251,11 @@ def esptool_subprocess(command: str, *, size: int = 0) -> str:
     # Use Popen() to monitor progress messages in the output
     p = Popen(args, stdout=PIPE, stderr=PIPE, text=True, bufsize=0)
     output, stderr = "", ""
-    if log.isloglevel("info") and size > ESPToolProgressBar.MIN_SIZE and p.stdout:
+    if (
+        log.isEnabledFor(logging.INFO)
+        and size > ESPToolProgressBar.MIN_SIZE
+        and p.stdout
+    ):
         output = ESPToolProgressBar(p.stdout, size).run()  # Show a progress bar
     elif p.stdout:
         for line in p.stdout:

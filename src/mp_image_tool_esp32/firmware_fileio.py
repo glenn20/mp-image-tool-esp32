@@ -21,11 +21,13 @@ from typing import BinaryIO
 
 from typing_extensions import Buffer
 
-from . import logger as log
+from . import logger
 from .argtypes import MB
 from .esptool_io import BLOCKSIZE, ESPTool, get_esptool
 from .image_header import ImageHeader
 from .partition_table import PartitionEntry, PartitionError
+
+log = logger.getLogger(__name__)
 
 # Bootloader offsets for esp32 devices, indexed by chip name
 # Offset is zero for all devices except esp32 and esp32s2

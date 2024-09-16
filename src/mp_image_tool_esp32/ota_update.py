@@ -21,9 +21,11 @@ from functools import cached_property
 from pathlib import Path
 from typing import List
 
-from . import logger as log
+from . import logger
 from .firmware import Firmware
 from .partition_table import PartitionEntry
+
+log = logger.getLogger(__name__)
 
 OTA_SIZE = 0x20  # The size of an OTA record in bytes (32 bytes)
 OTA_OFFSETS = (0, 0x1000)  # The offsets of the OTA records in the otadata partition

@@ -185,7 +185,7 @@ class ImageHeader(ImageHeaderStruct):
 
     def update_image(self, data: bytes | bytearray) -> Tuple[bytearray, int]:
         """Update the bootloader hash, if it has changed."""
-        if isinstance(data, bytes):
+        if not isinstance(data, bytearray):
             data = bytearray(data)
         # Write the updated header to the start of the bootloader
         data[: self.size] = bytes(self)  # Write the updated header

@@ -18,8 +18,10 @@ from functools import cached_property
 from itertools import takewhile
 from typing import Any, Iterable, List, NamedTuple
 
-from . import logger as log
+from . import logger
 from .argtypes import KB, MB, B
+
+log = logger.getLogger(__name__)
 
 # The default layout in flash storage on device
 FLASH_SIZE = 0x400_000  # Default size of flash storage (4 Megabytes)

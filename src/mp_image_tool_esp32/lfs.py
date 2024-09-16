@@ -21,10 +21,12 @@ from typing import BinaryIO, DefaultDict, Iterable, Iterator
 import more_itertools
 from littlefs import LFSConfig, LFSStat, LittleFS, LittleFSError, UserContext
 
-from . import logger as log
+from . import logger
 from .argtypes import B, IntArg
 from .firmware import Firmware
 from .partition_table import format_table
+
+log = logger.getLogger(__name__)
 
 BLOCK_SIZE: int = B  # The default block size (4096) for the LittleFS filesystem.
 
@@ -36,8 +38,6 @@ BOOT_PY = """\
 #import webrepl
 #webrepl.start()
 """
-
-logger = log.getLogger(__name__)
 
 
 @dataclass
@@ -87,10 +87,14 @@ class BlockCache(DefaultDict[int, bytes]):
         self.write_cache = {} if write_cache else None
         self.stats = CacheStats()
 
+    def __getitem__(self, key: int) -> bytes:
+        self.stats.reads += 1
+        return super().__getitem__(key)
+
     def __missing__(self, block: int) -> bytes:
         """Reading from the cache failed, read the block from the file."""
         self.stats.misses += 1
-        logger.debug(f"Read block {block} from file")
+        log.debug(f"Read block {block} from file")
         self.file.seek(block * self.block_size)
         data = self.file.read(self.block_size)
         super().__setitem__(block, data)  # Save in the read cache
@@ -101,17 +105,13 @@ class BlockCache(DefaultDict[int, bytes]):
         assert len(data) == self.block_size, "Data must be a block size"
         self.stats.writes += 1
         if self.write_cache is not None:
-            logger.debug(f"Write block {block} to cache")
+            log.debug(f"Write block {block} to cache")
             self.write_cache[block] = data  # Cache the write
         else:
-            logger.debug(f"Write block {block} to file {self.file.name}")
+            log.debug(f"Write block {block} to file {self.file.name}")
             self.file.seek(block * self.block_size)
             self.file.write(data)
         super().__setitem__(block, data)  # Save in the read cache
-
-    def __getitem__(self, key: int) -> bytes:
-        self.stats.reads += 1
-        return super().__getitem__(key)
 
     def flush(self) -> None:
         """Flush cached writes to the file."""
@@ -124,7 +124,7 @@ class BlockCache(DefaultDict[int, bytes]):
             items: Iterable[tuple[int, bytes]]
         ) -> Iterable[tuple[int, bytes]]:
             return (
-                # (start_block, concatenated_block_data)
+                # (start_block_number, concatenated_block_data)
                 (blocks.peek()[0], b"".join(data for _block_num, data in blocks))
                 for blocks in (
                     more_itertools.peekable(group)
@@ -173,7 +173,7 @@ class UserContextFile(UserContext):
         self.block_cache[block] = data
 
     def read(self, cfg: LFSConfig, block: int, off: int, size: int) -> bytearray:
-        logger.debug("LFS Read : Block: %d, Offset: %d, Size=%d" % (block, off, size))
+        log.debug("LFS Read : Block: %d, Offset: %d, Size=%d" % (block, off, size))
         assert off == 0, "Read offset must be 0"
         assert (
             size == cfg.block_size == self.block_cache.block_size
@@ -183,9 +183,7 @@ class UserContextFile(UserContext):
         return bytearray(data[off : off + size])
 
     def prog(self, cfg: "LFSConfig", block: int, off: int, data: bytes) -> int:
-        logger.debug(
-            "LFS Prog : Block: %d, Offset: %d, Size=%d" % (block, off, len(data))
-        )
+        log.debug("LFS Prog : Block: %d, Offset: %d, Size=%d" % (block, off, len(data)))
         block_size = cfg.block_size
         assert off == 0, "Write offset must be 0"
         assert (
@@ -199,7 +197,7 @@ class UserContextFile(UserContext):
         return 0
 
     def erase_block(self, block: int) -> int:
-        logger.debug("LFS Erase: Block: %d" % block)
+        log.debug("LFS Erase: Block: %d" % block)
         self.write_block(block, b"\xff" * self.block_cache.block_size)
         return 0
 
@@ -209,7 +207,7 @@ class UserContextFile(UserContext):
 
     def sync(self, cfg: "LFSConfig") -> int:
         # sync is a no-op for the BlockCache
-        logger.debug("LFS Sync:")
+        log.debug("LFS Sync:")
         return 0
 
     def __del__(self):

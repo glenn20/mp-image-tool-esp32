@@ -6,7 +6,6 @@ firmware files and flash storage on ESP32 devices.
 After importing, call `main.main()` to execute the program.
 
 Dependencies:
-- `colorama` for colour terminal support,
 - `esptool.py` for access to flash storage on serial-attached ESP32 devices.
 """
 
@@ -14,22 +13,23 @@ from __future__ import annotations
 
 import argparse
 import copy
+import logging
 import os
 import platform
 import re
 import shutil
 import sys
-import traceback
 from pathlib import Path
 from typing import List, Sequence
 
-from . import __version__, layouts, ota_update
-from . import logger as log
+from . import __version__, layouts, logger, ota_update
 from .argparse_typed import parser as typed_parser
 from .argtypes import MB, ArgList, B, IntArg, PartList
 from .firmware import Firmware
 from .lfs import lfs_cmd
 from .partition_table import PartitionError, PartitionTable
+
+log = logger.getLogger(__name__)
 
 
 # `TypedNamespace` and the `usage` string together provide three things:
@@ -52,7 +52,7 @@ class TypedNamespace(argparse.Namespace):
     output: str
     quiet: bool
     debug: bool
-    log: ArgList
+    log: str
     no_reset: bool
     check_app: bool
     extract_app: bool
@@ -167,15 +167,17 @@ def run_commands(argv: Sequence[str] | None = None) -> None:
     args = parser.parse_args(args=argv, namespace=namespace)
     progname = os.path.basename(sys.argv[0])
 
-    log.setLevel("ERROR" if args.quiet else "DEBUG" if args.debug else "INFO")
+    logging.basicConfig(
+        format=logger.FORMAT,
+        handlers=[logger.richhandler],
+        level=(
+            logging.ERROR
+            if args.quiet
+            else logging.DEBUG if args.debug else logging.INFO
+        ),
+    )
     if args.log:
-        if str(args.log) == "show":
-            log.info(
-                f"Available loggers: {list(log.logging.root.manager.loggerDict.keys())}"
-            )
-        else:
-            for name, level in args.log:
-                log.getLogger(name).setLevel(level.upper())
+        logger.set_logging(args.log)
 
     log.action(
         f"Running {progname} v{__version__} (Python {platform.python_version()})."
@@ -203,7 +205,7 @@ def run_commands(argv: Sequence[str] | None = None) -> None:
     if not firmware.is_device:
         app_size = firmware.file.seek(0, 2) - firmware.table.app_part.offset
         firmware.file.seek(firmware.bootloader)
-    if log.isloglevel("info"):
+    if log.isEnabledFor(logging.INFO):
         layouts.print_table(firmware.table, app_size)
         if firmware.is_device and not args.fs:
             lfs_cmd(firmware, "df")  # Display filesystem usage information
@@ -293,7 +295,7 @@ def run_commands(argv: Sequence[str] | None = None) -> None:
     if extension or args.output:  # A change has been made to the partition table
         if new_table.app_part.offset != firmware.table.app_part.offset:
             raise PartitionError("first app partition offset has changed", new_table)
-        if log.isloglevel("info"):
+        if log.isEnabledFor(logging.INFO):
             layouts.print_table(new_table, app_size)
         if not firmware.is_device:  # If input is a firmware file, make a copy
             # Make a copy of the firmware file and open the new firmware...
@@ -409,10 +411,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         log.setLevel("DEBUG" if "-d" in sys.argv or "--debug" in sys.argv else "INFO")
         run_commands(argv)
     except (KeyboardInterrupt, Exception) as err:
-        log.error(f"{type(err).__name__}: {err}")
-        if log.isloglevel("debug"):
-            log.info("Traceback (most recent call last):")
-            log.info("".join(traceback.format_tb(err.__traceback__)))
+        if not log.isEnabledFor(logging.DEBUG):
+            log.error(f"{type(err).__name__}: {err}")  # Just log the error
+        else:
+            log.exception("Error:")
         return 1
     return 0
 
