@@ -15,6 +15,7 @@ from typing import Any
 import mp_image_tool_esp32
 import pytest
 from _pytest.config import Config
+from mp_image_tool_esp32 import data_table
 
 rootdir: Path = Path(__file__).parent.parent  # The root directory of the project
 datadir: Path = Path(__file__).parent / "data"  # Location for firmware files
@@ -100,13 +101,6 @@ def pytest_addoption(parser: Namespace):
         default=False,
         help="Flash a firmware image to the device",
     )
-    parser.addoption(
-        "--show",
-        dest="show",
-        action="store_true",
-        default=False,
-        help="Show output from the mp-image-tool-esp32 command",
-    )
 
 
 def download_firmware_files():
@@ -150,7 +144,7 @@ def my_setup(
     caplog.set_level(logging.INFO, logger="mp_image_tool_esp32")
 
 
-def _mpi_run(firmware: Path, *args: str, output: Path | None = None) -> None:
+def do_mpi_run(firmware: Path, *args: str, output: Path | None = None) -> None:
     """Execute the mp-image-tool-esp32 command with the given arguments.
     Returns the output of the command as a string."""
     outputfile = output or Path("_test_output.bin")
@@ -158,9 +152,8 @@ def _mpi_run(firmware: Path, *args: str, output: Path | None = None) -> None:
         args = ("--output", outputfile.name) + args
     cmd = [str(mpi_prog), str(firmware), options.args, *args]
     cmd = shlex.split(" ".join(cmd))
-    if options.show:
-        print("Command:", " ".join(cmd))
-    importlib.reload(mp_image_tool_esp32)
+    importlib.reload(mp_image_tool_esp32)  # Reload the module to reset global variables
+    data_table.use_rich_table = False  # Use plain text tables for testing
     assert mp_image_tool_esp32.main(cmd[1:]) == 0
     # subprocess.run(cmd)
     if not output and outputfile.exists() and firmware.parent == Path("."):
@@ -170,10 +163,9 @@ def _mpi_run(firmware: Path, *args: str, output: Path | None = None) -> None:
 
 def mpi_run(firmware: Path, *args: str, output: Path | None = None) -> str:
     assert capsys_ is not None
-    _ = capsys_.readouterr().out
-    _mpi_run(firmware, *args, output=output)
-    stdout = capsys_.readouterr().out
-    return stdout
+    _ = capsys_.readouterr().out  # Flush any captured output
+    do_mpi_run(firmware, *args, output=output)
+    return capsys_.readouterr().out  # Return captured output from command
 
 
 def log_messages() -> str:
@@ -275,7 +267,7 @@ def device() -> Path | None:
     device = Path(expand_device_short_names(options.port))
     if options.flash:
         # Flash default firmware to the device
-        _mpi_run(firmware_file, "--flash", str(device))
+        do_mpi_run(firmware_file, "--flash", str(device))
 
     return device
 

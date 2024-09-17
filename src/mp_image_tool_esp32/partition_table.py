@@ -12,14 +12,14 @@ write from binary partiton tables in firmware files and devices.
 from __future__ import annotations
 
 import hashlib
-import re
 import struct
 from functools import cached_property
 from itertools import takewhile
-from typing import Any, Iterable, List, NamedTuple
+from typing import List, NamedTuple
 
 from . import logger
 from .argtypes import KB, MB, B
+from .data_table import TableTuple, plain_table
 
 log = logger.getLogger(__name__)
 
@@ -86,22 +86,6 @@ def _human(size: int) -> str:
     )  # fmt: skip
 
 
-# Return a formatted data table as a string
-def format_table(
-    format: str, header: Iterable[str], data: Iterable[Iterable[Any]]
-) -> str:
-    # Make a format string for the header fields, which are all strings.
-    hdr_format = re.sub(r":([^#}0-9.]*)#?(\d*)[.]?(\d*,?)\w}", r":\1\2s}", format)
-    if hdr_format.startswith(" "):
-        hdr_format = f"#{hdr_format[1:]}"
-    return "\n".join(
-        (
-            hdr_format.format(*header),
-            *(format.format(*line) for line in data),
-        )
-    )
-
-
 class PartitionEntry(PartTuple):
     @staticmethod
     def from_bytes(data: bytes) -> PartitionEntry:
@@ -166,10 +150,11 @@ class PartitionTable(List[PartitionEntry]):
             raise PartitionError(f"Partition '{subtype_name}' not found.", self)
         return p
 
-    def __str__(self) -> str:
+    def table_data(self) -> TableTuple:
+        title = f"Partition table (flash size: [red]{self.max_size // MB}MB[/red]):"
         format = "  {:16s} {:8s} {:8s} {:>#10x} {:>#10x} {:>#10x} {:>#5x} {:>10s}"
-        header = ("Name", "Type", "SubType", "Offset", "Size", "End", "Flags", "")
-        data = (
+        header = "Name Type SubType Offset Size End Flags ''"
+        data = [
             (
                 p.name,
                 p.type_name,
@@ -181,8 +166,11 @@ class PartitionTable(List[PartitionEntry]):
                 _human(p.size),
             )
             for p in self
-        )
-        return format_table(format, header, data)
+        ]
+        return TableTuple(title, format, header, data)
+
+    def __str__(self) -> str:
+        return plain_table(self.table_data())
 
     @staticmethod
     def from_bytes(data: bytes, max_size: int = 0) -> PartitionTable:

@@ -129,9 +129,9 @@
   boot.py
 
 -q --fs df vfs: |
-  # Filesystem     4K-blocks     Used Available   Use%       Free kB
-    vfs                  512        9       503     2%      2,012 kB
+  # Partition       Total kB  Used kB   Free kB  Used%
+    vfs                2,048       36     2,012     2%
 
 -q -f 6M --resize vfs=0 --fs grow --fs df: |
-  # Filesystem     4K-blocks     Used Available   Use%       Free kB
-    vfs                 1024        9      1015     1%      4,060 kB
+  # Partition       Total kB  Used kB   Free kB  Used%
+    vfs                4,096       36     4,060     1%

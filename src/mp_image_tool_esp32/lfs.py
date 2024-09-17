@@ -20,11 +20,12 @@ from typing import BinaryIO, DefaultDict, Iterable, Iterator
 
 import more_itertools
 from littlefs import LFSConfig, LFSStat, LittleFS, LittleFSError, UserContext
+from rich import box
 
 from . import logger
-from .argtypes import B, IntArg
+from .argtypes import KB, B, IntArg
+from .data_table import TableTuple, print_table
 from .firmware import Firmware
-from .partition_table import format_table
 
 log = logger.getLogger(__name__)
 
@@ -331,22 +332,22 @@ class LFSCmd:
 
     def do_df(self) -> None:
         """Print size and usage information about the LittleFS filesystem."""
-        table = format_table(
-            "  {:14s} {:>9d} {:>8d} {:>9d} {:>5.0f}% {:>10,d} kB",
-            "Filesystem 4K-blocks Used Available Use Free".split(),
-            (
+        table = TableTuple(
+            "LittleFS Filesystems",
+            "  {:14s} {:>9,d} {:>8,d} {:>9,d} {:>5.0f}%",
+            "Partition 'Total kB' 'Used kB' 'Free kB' Used",
+            [
                 (
                     name,
-                    fs.block_count,
-                    fs.used_block_count,
-                    fs.block_count - fs.used_block_count,
+                    fs.block_count * BLOCK_SIZE // KB,
+                    fs.used_block_count * BLOCK_SIZE // KB,
+                    (fs.block_count - fs.used_block_count) * BLOCK_SIZE // KB,
                     100 * fs.used_block_count / fs.block_count,
-                    (fs.block_count - fs.used_block_count) * BLOCK_SIZE // 1024,
                 )
                 for fs, name in self.vfs_partitions(self.args)
-            ),
+            ],
         )
-        print(table)
+        print_table(table, box=box.ROUNDED, style="cyan")
 
     def do_grow(self) -> None:
         """Resize/grow the LittleFS filesystem."""

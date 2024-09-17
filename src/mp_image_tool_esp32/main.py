@@ -91,7 +91,8 @@ usage = """
     -q --quiet          | set debug level to ERROR (default: INFO)
     -n --no-reset       | leave device in bootloader mode afterward
     -x --extract-app    | extract .app-bin from firmware
-    -f --flash-size SIZE| size of flash for new partition table
+    -f --flash-size SIZE| change the expected flash size programmed into the \
+                          firmware bootloader
     -a --app-size SIZE  | size of factory and ota app partitions
     -m --method METHOD  | esptool method: subprocess, command or direct (default)
     -d --debug          | set debug level to DEBUG (default: INFO)
@@ -206,7 +207,7 @@ def run_commands(argv: Sequence[str] | None = None) -> None:
         app_size = firmware.file.seek(0, 2) - firmware.table.app_part.offset
         firmware.file.seek(firmware.bootloader)
     if log.isEnabledFor(logging.INFO):
-        layouts.print_table(firmware.table, app_size)
+        layouts.print_partition_table(firmware.table, app_size)
         if firmware.is_device and not args.fs:
             lfs_cmd(firmware, "df")  # Display filesystem usage information
 
@@ -296,14 +297,13 @@ def run_commands(argv: Sequence[str] | None = None) -> None:
         if new_table.app_part.offset != firmware.table.app_part.offset:
             raise PartitionError("first app partition offset has changed", new_table)
         if log.isEnabledFor(logging.INFO):
-            layouts.print_table(new_table, app_size)
+            layouts.print_partition_table(new_table, app_size)
         if not firmware.is_device:  # If input is a firmware file, make a copy
             # Make a copy of the firmware file and open the new firmware...
             output_filename = args.output or re.sub(
                 r"([.][^.]+)?$", f"{extension}\\1", basename, 1
             )
             firmware.file.close()
-            log.action(f"Writing firmware to {output_filename}...")
             shutil.copy(input, output_filename)
             firmware = Firmware(output_filename)
 
