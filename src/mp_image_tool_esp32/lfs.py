@@ -210,7 +210,7 @@ class UserContextFile(UserContext):
         log.debug("LFS Sync:")
         return 0
 
-    def __del__(self):
+    def __del__(self) -> None:
         self.block_cache.close()
 
 
@@ -366,11 +366,11 @@ class LFSCmd:
         for fs, name, part in self.vfs_files(self.args or ["/"]):
             log.action(f"ls '{part}:{name}':")
             src = Path(name)
-            for root, dirs, files in fs.walk(str(src)):
-                root = Path(root).relative_to(src)
-                for f in (root / f for f in files):
+            for root, subdirs, files in fs.walk(str(src)):
+                d = Path(root).relative_to(src)
+                for f in (d / f for f in files):
                     print(f"{f}")
-                for f in (root / f for f in dirs):
+                for f in (d / f for f in subdirs):
                     print(f"{f}/")
 
     def do_cat(self) -> None:
@@ -410,11 +410,11 @@ class LFSCmd:
 
     def do_get(self) -> None:
         """Copy a file or directory from the LittleFS filesystem to the local filesystem."""
-        dest = self.args.pop(-1) if len(self.args) > 1 else "."
+        destname = self.args.pop(-1) if len(self.args) > 1 else "."
         for fs, name, part in self.vfs_files(self.args):
-            log.action(f"get '{part}:{name}' -> '{dest}:")
+            log.action(f"get '{part}:{name}' -> '{destname}:")
 
-            source, dest = Path(name), Path(dest)
+            source, dest = Path(name), Path(destname)
             if _is_file(fs, source):  # Copy a single file
                 # If the destination is a directory, copy the file into it
                 if dest.is_dir():
@@ -424,13 +424,13 @@ class LFSCmd:
 
             print(f"{source} -> {dest}")
             dest.mkdir(exist_ok=True)
-            for srcdir, dirs, files in fs.walk(str(source)):
-                srcdir = Path(srcdir)
+            for root, subdirs, files in fs.walk(str(source)):
+                srcdir = Path(root)
                 dstdir = dest / srcdir.relative_to(source)
                 for src, dst in ((srcdir / f, dstdir / f) for f in files):
                     print(f"{src} -> {dst}")
                     _get_file(fs, src, dst)
-                for src, dst in ((srcdir / f, dstdir / f) for f in dirs):
+                for src, dst in ((srcdir / f, dstdir / f) for f in subdirs):
                     print(f"{src}/ -> {dst}/")
                     dst.mkdir(exist_ok=True)
 
@@ -453,8 +453,8 @@ class LFSCmd:
                 dest /= source.name
                 print(f"{source} -> {dest}")
                 fs.makedirs(dest.as_posix(), exist_ok=True)
-                for srcdir, dirs, files in os.walk(str(source)):
-                    srcdir = Path(srcdir)
+                for root, dirs, files in os.walk(str(source)):
+                    srcdir = Path(root)
                     dstdir = dest / srcdir.relative_to(source)
                     for src, dst in ((srcdir / f, dstdir / f) for f in files):
                         print(f"{src} -> {dst}")

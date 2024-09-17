@@ -154,7 +154,7 @@ class FirmwareDeviceIO(BinaryIO):
         self._pos += size
         return size
 
-    def seek(self, pos: int, whence: int = 0):
+    def seek(self, pos: int, whence: int = 0) -> int:
         self._pos = (0, self._pos, self._end)[whence] + pos
         return self._pos
 

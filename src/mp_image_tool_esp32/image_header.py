@@ -119,7 +119,8 @@ class ImageHeader(ImageHeaderStruct):
     @property
     def flash_size(self) -> int:
         """Return the flash size from the bootloader header."""
-        return (2**self.flash_size_id) * MB
+        size: int = (2**self.flash_size_id) * MB
+        return size
 
     @flash_size.setter
     def flash_size(self, flash_size: int) -> None:

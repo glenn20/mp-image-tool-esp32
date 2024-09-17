@@ -170,7 +170,7 @@ class ESPToolProgressBar:
             self.thread.start()
         return self
 
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any):
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         if self.thread:
             self.input.close()
             self.thread.join()
@@ -216,7 +216,7 @@ def redirect_stdout_stderr(name: str = "esptool") -> Generator[IO[str], None, No
     out, err = StringIO_RW(), StringIO_RW()
     sys.stdout, sys.stderr = out, err
 
-    error = None
+    error: BaseException | KeyboardInterrupt | None = None
     try:
         yield out  # Pass the output as value of the contextmanager
     except KeyboardInterrupt as e:
@@ -291,7 +291,7 @@ def check_alignment(func: Callable[..., Any]) -> Callable[..., Any]:
                         f"{func.__name__}: {arg:#x} is not aligned to "
                         f"blocksize ({BLOCKSIZE:#x} bytes)."
                     )
-        return func(self, *args)
+        return func(self, *args)  # type: ignore
 
     return inner
 
@@ -350,6 +350,8 @@ class ESPToolSubprocess(ESPTool):
 
 
 class ESPToolModuleMain(ESPToolSubprocess):
+    esp_maybe: esptool.ESPLoader | None
+
     """An ESPTool class which calls `esptool.main()` from the esptool module.
     Overrides the esptool_cmd() method to run the esptool commands using
     `esptool.main()` in this python process (instead of a subprocess)."""
@@ -358,7 +360,7 @@ class ESPToolModuleMain(ESPToolSubprocess):
         """Connect to the ESP32 device on the specified serial `port`.
         Returns a tuple of the `esp` object, `chip_name` and `flash_size`.
         """
-        self.esp = None
+        self.esp_maybe = None
         super().__init__(port, baud)
 
     def esptool_cmd(self, command: str, *, size: int = 0) -> str:
@@ -368,7 +370,7 @@ class ESPToolModuleMain(ESPToolSubprocess):
         log.debug(f"$ esptool.py {cmd}")
         with redirect_stdout_stderr(command) as stdout:
             with ESPToolProgressBar(stdout, size) as pbar:
-                esptool.main(shlex.split(cmd), self.esp)
+                esptool.main(shlex.split(cmd), self.esp_maybe)
         log.debug(pbar.output)
         return pbar.output
 
@@ -383,13 +385,16 @@ class ESPToolModuleDirect(ESPToolModuleMain):
     device is correctly initialised.
     """
 
+    esp: esptool.ESPLoader
+
     def __init__(self, port: str, baud: int = 0):
         """Connect to the ESP32 device on the specified serial `port`."""
         with redirect_stdout_stderr("detect_chip"):
             esp = esptool.cmds.detect_chip(port)
             esp = esp.run_stub()
 
-        self.esp: esptool.ESPLoader = esp
+        self.esp = esp
+        self.esp_maybe = esp
         self.port = port
         self.baud = set_baudrate(baud or BAUDRATE)
         self.esptool_args = "--after no_reset_stub --no-stub"
@@ -448,7 +453,7 @@ class ESPToolModuleDirect(ESPToolModuleMain):
 
     def close(self) -> None:
         if self.esp:
-            self.esp._port.close()  # type: ignore - esptool does not close the port
+            self.esp._port.close()
 
 
 # We have three different implementations of the ESPTool interface

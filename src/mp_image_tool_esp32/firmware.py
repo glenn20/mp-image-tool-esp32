@@ -64,7 +64,7 @@ class Firmware:
     ) -> None:
         self.filename = filename
         self.file = (
-            FirmwareDeviceIO(
+            FirmwareDeviceIO(  # type: ignore
                 filename,
                 baud,
                 esptool_method=esptool_method,
@@ -105,7 +105,7 @@ class Firmware:
 
     def partition(self, part: PartitionEntry | str) -> Partition:
         """Return a `Partition` object for the partition `part`."""
-        return Partition(self._get_part(part), self.file)
+        return Partition(self._get_part(part), self.file)  # type: ignore
 
     def check_app_image_header(self, data: bytes, name: str) -> bool:
         """Check that `data` is a valid app image for this device/firmware."""
@@ -179,10 +179,10 @@ class Firmware:
         app_parts = [self._get_part(BOOTLOADER_NAME)] + [
             p for p in new_table if p.type_name == "app" and p.offset < self.size
         ]
-        for part in app_parts:
+        for partentry in app_parts:
             # Check there is an app header at the start of the partition
-            name = part.name
-            with self.partition(part) as part:
+            name = partentry.name
+            with self.partition(partentry) as part:
                 data = part.read(self.BLOCKSIZE)
                 if not self.check_app_image_header(data, name):
                     log.warning(f"Partition '{name}': App image signature not found.")

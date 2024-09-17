@@ -16,6 +16,7 @@ rollback to the previous firmware. This can be done by calling
 
 import binascii
 import struct
+import typing
 from enum import IntEnum
 from functools import cached_property
 from pathlib import Path
@@ -59,7 +60,9 @@ def ota_is_valid(seq: int, state: int, crc: int) -> bool:
 def ota_sequence_number(data: bytes) -> int:
     """Return the ota sequence number from a binary OTA record in `data` or 0 if
     the record is invalid."""
-    seq, _, state, crc = struct.unpack(OTA_FMT, data)
+    seq, _, state, crc = typing.cast(
+        tuple[int, str, int, int], struct.unpack(OTA_FMT, data)
+    )
     is_valid = ota_is_valid(seq, state, crc)
     log.debug(f"OTA record: seq={seq}, state={state}, crc={crc}, valid={is_valid}")
     return seq if is_valid else 0

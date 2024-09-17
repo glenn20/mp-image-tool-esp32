@@ -262,8 +262,8 @@ def run_commands(argv: Sequence[str] | None = None) -> None:
 
     if args.app_size:  # -a --app-size SIZE : Resize all the APP partitions
         app_parts = filter(lambda p: p.type == new_table.APP_TYPE, new_table)
-        for p in app_parts:
-            new_table.resize_part(p.name, args.app_size)
+        for e in app_parts:
+            new_table.resize_part(e.name, args.app_size)
         extension += f"-appsize={args.app_size // B}B"
 
     if args.delete:  # --delete name1[,name2,..] : Delete partition from table
