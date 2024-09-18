@@ -39,6 +39,6 @@ tests.
   in `test_firmware.py` and `test_fs.py`. These are indexed by the command line
   args provided to `mp_image_tool_esp32`.
 
-- `tests/data/*`: Directory for micropython firmware files downloiaded from
-  <https://micropython.org/download/> and a sample filesystem use for test_fs.py
+- `tests/data/*`: Directory for micropython firmware files downloaded from
+  <https://micropython.org/download/> and a sample filesystem used for test_fs.py
   tests.

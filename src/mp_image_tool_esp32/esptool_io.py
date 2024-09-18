@@ -23,14 +23,13 @@ All esptool.py commands and output are logged to the DEBUG facility.
 from __future__ import annotations
 
 import io
-import logging
 import re
 import shlex
 import sys
 import time
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
-from subprocess import PIPE, CalledProcessError, Popen
+from subprocess import PIPE, Popen
 from tempfile import NamedTemporaryFile
 from threading import Lock, Thread
 from typing import IO, Any, Callable, Dict, Generator, Sequence
@@ -38,7 +37,14 @@ from typing import IO, Any, Callable, Dict, Generator, Sequence
 import esptool
 import esptool.cmds
 import esptool.util
-import tqdm
+from rich.console import Console
+from rich.progress import (
+    DownloadColumn,
+    Progress,
+    SpinnerColumn,
+    TaskID,
+    TransferSpeedColumn,
+)
 from typing_extensions import Buffer
 
 from . import logger
@@ -49,6 +55,11 @@ log = logger.getLogger(__name__)
 BAUDRATES = (115200, 230400, 460800, 921600, 1500000, 2000000, 3000000)
 BAUDRATE = 921600  # Default baudrate for esptool.py
 BLOCKSIZE = B  # Block size for erasing/writing regions of the flash storage
+
+
+def set_baudrate(baud: int) -> int:
+    """Set the baudrate for `esptool.py` to the highest value <= `baud`."""
+    return max(filter(lambda x: x <= baud, BAUDRATES))
 
 
 class ESPTool(ABC):
@@ -99,29 +110,70 @@ class ESPTool(ABC):
         ...
 
 
-# Arguments for the tqdm progress bar
-tqdm_args: dict[str, Any] = dict(
-    delay=0,
-    file=sys.__stderr__,
-    dynamic_ncols=True,
-)
+MIN_SIZE = 64 * KB
+
+
+class MyProgressBar:
+    columns = (
+        SpinnerColumn(),
+        *Progress.get_default_columns(),
+        DownloadColumn(),
+        TransferSpeedColumn(),
+    )
+
+    def __init__(self, *args: Any, **kwargs: Any):
+        self.total = kwargs.pop("total", 0)
+        self.name = kwargs.pop("name") or "Progress"
+        self.progress = Progress(
+            *(self.columns + args),
+            console=Console(file=sys.__stdout__),
+            redirect_stderr=False,
+            redirect_stdout=False,
+            disable=self.total < MIN_SIZE,
+            **kwargs,
+        )
+        self.task: TaskID | None = None
+
+    def __enter__(self) -> MyProgressBar:
+        p = self.progress.__enter__()
+        self.task = p.add_task(f"[cyan]{self.name}", total=self.total)
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        self.progress.__exit__(exc_type, exc_val, exc_tb)
+
+    def update(self, n: int, size: int = 0) -> None:
+        assert self.task is not None
+        self.progress.update(self.task, completed=n, size=size or None)
+
 
 # Regexp to match progress messages printed out by esptool.py
 # match[1] is "" for reads and "Writing at " for writes
 # match[2] is the number of bytes read/written,
-# match[3] is the percentage complete
 # Matches: "Writing at 0x0002030... (2 %)\x08" and "1375 (1 %)\x08" at end of output
-PROGRESS_BAR_MESSAGE_REGEXP = re.compile(
-    r"(Writing at )?((0x)?[0-9a-f]+)[.]* *\(([0-9]+) *%\)[\n\r\x08]$"
-)
+PROGRESS_BAR_MESSAGE_REGEXP = re.compile(r"(Writing at |Wrote )?([0-9][0-9a-fx]+)")
 
 
-def set_baudrate(baud: int) -> int:
-    """Set the baudrate for `esptool.py` to the highest value <= `baud`."""
-    return max(filter(lambda x: x <= baud, BAUDRATES))
+def monitor_esptool_progress(input: IO[str], update: Callable[[int, int], None]) -> str:
+    n, offset, line, output = 0, 0, "", ""
+    while s := input.read(1):
+        line += s
+        output += s
+        if s in ("\n", "\r", "\x08"):  # If we have a whole new line
+            log.debug(line.strip())
+            if match := re.match(PROGRESS_BAR_MESSAGE_REGEXP, line):
+                n = int(match[2], 0)
+                # On writes, the first number is a starting value - need to subtract
+                offset = offset or (n if match[1] else 0)
+                update(n - offset, 0)  # Update the progress bar
+            line = ""
+    return output
 
 
-class ESPToolProgressBar:
+@contextmanager
+def esptool_progress_bar(
+    size: int = 0, *, name: str = "", input: IO[str] | None = None
+) -> Generator[list[str], None, None]:
     """Show a progress bar for `esptool.py` reads and writes.
 
     Monitors the `input` IO stream for progress messages and updates a
@@ -130,51 +182,63 @@ class ESPToolProgressBar:
     separate thread while executing the body of the `with` block. If the `run()`
     method is used, the progress bar is run in the current thread.
 
-    The progress bar is shown using the `tqdm` module.
+    The progress bar is shown.
     """
+    thread = None  # The thread running the progress bar
+    exception: BaseException | None = None  # Any exception raised in the thread
+    output = [""]
+    with redirect_stdout_stderr(name) as stdout:
+        with MyProgressBar(total=size, name=name) as pbar:
+            stream = input or stdout
+            assert input is not None
 
-    MIN_SIZE = 64 * KB
+            def run() -> None:
+                try:
+                    output[0] = monitor_esptool_progress(stream, pbar.update)
+                except Exception as e:
+                    nonlocal exception
+                    exception = e
 
-    def __init__(self, input: IO[str], size: int = 0):
-        self.input = input  # The input stream to monitor
-        self.size: int = size  # The expected size of the read/write operation
-        self.output: str = ""  # Save the output for later
-        self.thread: Thread | None = None  # The thread to run the progress bar
+            thread = Thread(target=run)
+            thread.start()
+            yield output
+            stream.close()  # Monitor thread will exit after processing input
+            thread.join()
+            if exception:
+                raise exception
 
-    def run(self) -> str:
-        """Use a tqdm progress bar to show progress of `esptool.py` reads and
-        writes. Monitors command output from `stdout` and updates the progress bar
-        when progress updates are received."""
-        if self.size < self.MIN_SIZE:
-            return self.input.read()
-        n, offset, line = 0, 0, ""
-        with tqdm.trange(0, self.size // KB, unit="kB", **tqdm_args) as pbar:
-            while n < self.size and (s := self.input.read(1)):
-                line += s
-                self.output += s
-                if s in ("\n", "\r", "\x08") and (  # If we have a whole new line
-                    match := re.search(PROGRESS_BAR_MESSAGE_REGEXP, line)  # and a match
-                ):
-                    n = int(match[2], 0)
-                    # On writes, the first number is a starting value - need to subtract
-                    offset = offset or (n if match[1] else 0)
-                    pbar.update((n - offset) // KB - pbar.n)  # Update the progress bar
-                    line = ""
-            pbar.update((self.size // KB) - pbar.n)  # Make sure we hit 100%
-        self.output += self.input.read()
-        return self.output
 
-    def __enter__(self) -> ESPToolProgressBar:
-        if self.size >= self.MIN_SIZE:
-            self.thread = Thread(target=self.run)
-            self.thread.start()
-        return self
+# A context manager to redirect stdout and stderr to a buffer
+# Will print stderr to stdout if an error occurs
+# This is used to wrap calls to esptool module functions directly
+@contextmanager
+def redirect_stdout_stderr(name: str = "esptool") -> Generator[IO[str], None, None]:
+    """A contect manager to redirect stdout and stderr to StringIO buffers.
+    If an exception occurs, stderr will be printed to output.
+    The `stdout` StringIO buffer is returned.
+    """
+    # Redirect stdout and stderr to StringIO buffers
+    backupio = sys.stdout, sys.stderr
+    out, err = StringIO_RW(), StringIO_RW()
+    sys.stdout, sys.stderr = out, err
 
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        if self.thread:
-            self.input.close()
-            self.thread.join()
-        self.output += self.input.read()
+    error: BaseException | KeyboardInterrupt | None = None
+    try:
+        yield out  # Pass the output as value of the contextmanager
+    except (KeyboardInterrupt, Exception) as e:
+        error = e
+    finally:
+        sys.stdout, sys.stderr = backupio
+        stdout = "" if out.closed else out.getvalue()
+        stderr = "" if err.closed else err.getvalue()
+        if error:
+            log.error(f"Error: {name} raises {type(err).__name__}")
+        if stderr:
+            log.warning(stderr)
+        if stdout:
+            log.debug(stdout)
+        if error:
+            raise error
 
 
 class StringIO_RW(io.StringIO):
@@ -200,83 +264,6 @@ class StringIO_RW(io.StringIO):
         with self.lock:
             self.buf += s
             return len(s)
-
-
-# A context manager to redirect stdout and stderr to a buffer
-# Will print stderr to stdout if an error occurs
-# This is used to wrap calls to esptool module functions directly
-@contextmanager
-def redirect_stdout_stderr(name: str = "esptool") -> Generator[IO[str], None, None]:
-    """A contect manager to redirect stdout and stderr to StringIO buffers.
-    If an exception occurs, stderr will be printed to output.
-    The `stdout` StringIO buffer is returned.
-    """
-    # Redirect stdout and stderr to StringIO buffers
-    backupio = sys.stdout, sys.stderr
-    out, err = StringIO_RW(), StringIO_RW()
-    sys.stdout, sys.stderr = out, err
-
-    error: BaseException | KeyboardInterrupt | None = None
-    try:
-        yield out  # Pass the output as value of the contextmanager
-    except KeyboardInterrupt as e:
-        error = e
-    except Exception as e:
-        error = e
-    finally:
-        sys.stdout, sys.stderr = backupio
-        stdout = "" if out.closed else out.getvalue()
-        stderr = "" if err.closed else err.getvalue()
-        if error:
-            log.error(f"Error: {name} raises {type(err).__name__}")
-            if stderr:
-                log.warning(stderr)
-            if stdout:
-                log.warning(stdout)
-            raise error
-        else:
-            if stderr:
-                log.warning(stderr)
-            if stdout:
-                log.debug(stdout)
-
-
-# This is used to run esptool.py commands in a subprocess
-def esptool_subprocess(command: str, *, size: int = 0) -> str:
-    """Run the `esptool.py` command and return the output as a string.
-    A tqdm progress bar is shown for read/write greater than 16KB.
-    Errors in the `esptool.py` command are raised as a `CalledProcessError`."""
-    args = shlex.split(command)
-    log.debug(f"$ {command}")
-    # Use Popen() to monitor progress messages in the output
-    p = Popen(args, stdout=PIPE, stderr=PIPE, text=True, bufsize=0)
-    output, stderr = "", ""
-    if (
-        log.isEnabledFor(logging.INFO)
-        and size > ESPToolProgressBar.MIN_SIZE
-        and p.stdout
-    ):
-        output = ESPToolProgressBar(p.stdout, size).run()  # Show a progress bar
-    elif p.stdout:
-        for line in p.stdout:
-            output += line
-            log.debug(line.strip())  # Show output as it happens if debug==True
-    output = output.strip()
-    if p.stderr:
-        stderr = p.stderr.read().strip()
-    err = p.poll()
-    if err and not (err == 1 and output.endswith("set --after option to 'no_reset'.")):
-        # Ignore the "set --after" warning message and ercode for esp32s2.
-        # If we add "--after no_reset", reconnects to the device fail repeatedly
-        log.error(f"Error: {command} raises error {err}.")
-        if stderr:
-            log.error(stderr)
-        if output:
-            log.error(output)
-        raise CalledProcessError(p.returncode, command, output, stderr)
-    elif stderr:
-        log.warning(stderr)
-    return output
 
 
 def check_alignment(func: Callable[..., Any]) -> Callable[..., Any]:
@@ -319,7 +306,14 @@ class ESPToolSubprocess(ESPTool):
             f"{sys.executable} -m esptool {self.esptool_args} "
             f"--baud {self.baud} --port {self.port} {command}"
         )
-        return esptool_subprocess(cmd, size=size)
+        # return esptool_subprocess(cmd, size=size)
+
+        name = command.split()[0]
+        p = Popen(shlex.split(cmd), stdout=PIPE, stderr=PIPE, text=True, bufsize=0)
+        with esptool_progress_bar(size, name=name, input=p.stdout) as output:
+            while p.poll() is None:
+                time.sleep(0.1)
+        return output[0]
 
     @check_alignment
     def write_flash(self, pos: int, data: Buffer) -> int:
@@ -368,11 +362,9 @@ class ESPToolModuleMain(ESPToolSubprocess):
         Calls the `main()` function in the `esptool` module with the command."""
         cmd = f"{self.esptool_args} --baud {self.baud} --port {self.port} {command}"
         log.debug(f"$ esptool.py {cmd}")
-        with redirect_stdout_stderr(command) as stdout:
-            with ESPToolProgressBar(stdout, size) as pbar:
-                esptool.main(shlex.split(cmd), self.esp_maybe)
-        log.debug(pbar.output)
-        return pbar.output
+        with esptool_progress_bar(size, name=cmd.split()[-1]) as output:
+            esptool.main(shlex.split(cmd), self.esp_maybe)
+        return output[0]
 
 
 class ESPToolModuleDirect(ESPToolModuleMain):
@@ -426,21 +418,13 @@ class ESPToolModuleDirect(ESPToolModuleMain):
             addr_filename=((pos, io.BytesIO(data)),),
         )
         data = memoryview(data)
-        with redirect_stdout_stderr("esptool_write_flash") as output:
-            with ESPToolProgressBar(output, len(data)) as pbar:
-                esptool.cmds.write_flash(self.esp, args)
-        log.debug(pbar.output)
+        with esptool_progress_bar(len(data), name="Write Flash"):
+            esptool.cmds.write_flash(self.esp, args)
         return len(data)
 
     def read_flash(self, pos: int, size: int) -> bytes:
-        if size < ESPToolProgressBar.MIN_SIZE:
-            return self.esp.read_flash(pos, size, None)
-        with tqdm.trange(0, size // KB, unit="kB", **tqdm_args) as pbar:
-
-            def progress(x: int, size: int) -> None:
-                pbar.update(x // KB - pbar.n)
-
-            return self.esp.read_flash(pos, size, progress)
+        with MyProgressBar(total=size, name="Read Flash") as pbar:
+            return self.esp.read_flash(pos, size, pbar.update)
 
     @check_alignment
     def erase_flash(self, pos: int, size: int) -> None:

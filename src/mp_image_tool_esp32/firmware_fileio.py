@@ -132,7 +132,7 @@ class FirmwareDeviceIO(BinaryIO):
                 f"Detected flash size ({self.esptool.flash_size//MB}MB) is "
                 f"different from firmware bootloader "
                 f"({self.header.flash_size//MB}MB).\n"
-                "  Use the '-f' option to change the size in the bootloader."
+                "  [italic]Use the '-f' option to change the size in the bootloader."
             )
 
     def __enter__(self) -> FirmwareDeviceIO:
