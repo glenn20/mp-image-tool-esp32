@@ -130,8 +130,8 @@
 
 -q --fs df vfs: |
   # Partition       Total kB  Used kB   Free kB  Used%
-    vfs                2,048       36     2,012     2%
+    vfs                 2048       36      2012     2%
 
 -q -f 6M --resize vfs=0 --fs grow --fs df: |
   # Partition       Total kB  Used kB   Free kB  Used%
-    vfs                4,096       36     4,060     1%
+    vfs                 4096       36      4060     1%

@@ -44,7 +44,7 @@ class IntArg(int):
             if arg.upper().endswith(k.upper()):
                 arg, unit = arg[: -len(k)], v
                 break
-        return super().__new__(cls, int(arg, 0) * unit)
+        return super().__new__(cls, (float(arg) if "." in arg else int(arg, 0)) * unit)
 
 
 class ArgList(List[List[str]]):

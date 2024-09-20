@@ -334,7 +334,7 @@ class LFSCmd:
         """Print size and usage information about the LittleFS filesystem."""
         table = TableTuple(
             "LittleFS Filesystems",
-            "  {:14s} {:>9,d} {:>8,d} {:>9,d} {:>5.0f}%",
+            "  {:14s} {:>9d} {:>8d} {:>9d} {:>5.0f}%",
             "Partition 'Total kB' 'Used kB' 'Free kB' Used",
             [
                 (
