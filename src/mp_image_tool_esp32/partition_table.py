@@ -9,6 +9,7 @@ Provides the:
 Both classes include `from_bytes()` and `to_bytes()` methods to read and
 write from binary partiton tables in firmware files and devices.
 """
+
 from __future__ import annotations
 
 import hashlib

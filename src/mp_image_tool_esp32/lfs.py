@@ -122,7 +122,7 @@ class BlockCache(DefaultDict[int, bytes]):
 
         # Join contiguous blocks together into larger blocks for writing
         def group_blocks(
-            items: Iterable[tuple[int, bytes]]
+            items: Iterable[tuple[int, bytes]],
         ) -> Iterable[tuple[int, bytes]]:
             return (
                 # (start_block_number, concatenated_block_data)
@@ -215,21 +215,21 @@ class UserContextFile(UserContext):
         self.block_cache.close()
 
 
-def _is_file(fs: LittleFS, src: str | Path) -> bool:
+def _is_file(fs: LittleFS, path: Path) -> bool:
     """Check if the path is a file."""
-    src = Path(src)
-    return (fs.stat(src.as_posix()).type & LFSStat.TYPE_REG) != 0
+    return (fs.stat(path.as_posix()).type & LFSStat.TYPE_REG) != 0
 
 
-def _is_dir(fs: LittleFS, src: Path) -> bool:
+def _is_dir(fs: LittleFS, path: Path) -> bool:
     """Check if the path is a directory."""
-    return (fs.stat(src.as_posix()).type & LFSStat.TYPE_DIR) != 0
+    return (fs.stat(path.as_posix()).type & LFSStat.TYPE_DIR) != 0
 
 
 def _get_file(fs: LittleFS, src: Path, dst: Path) -> None:
     """Copy a file from the LittleFS filesystem to the local filesystem."""
     with fs.open(src.as_posix(), "rb") as f:
         dst.write_bytes(f.read())
+    assert fs.stat(src.as_posix()).size == dst.stat().st_size
 
 
 def _put_file(fs: LittleFS, src: Path, dst: Path) -> None:
@@ -242,6 +242,7 @@ def _put_file(fs: LittleFS, src: Path, dst: Path) -> None:
         pass
     with fs.open(dst.as_posix(), "wb") as f:
         f.write(src.read_bytes())
+    assert fs.stat(dst.as_posix()).size == src.stat().st_size
 
 
 def littlefs(part: BinaryIO, block_count: int = 0) -> LittleFS:
@@ -284,7 +285,7 @@ class LFSCmd:
         else:
             raise ValueError(f"Unknown --fs command '{self.command}'")
 
-    def vfs_files(self, names: Iterable[str]) -> Iterator[tuple[LittleFS, str, str]]:
+    def vfs_files(self, names: Iterable[str]) -> Iterator[tuple[LittleFS, Path, str]]:
         """A generator to yield LittleFS filesystems for a list of partition names.
         Yields a tuple of the filesystem, the file name, and the partition name."""
         partname: str = "vfs"
@@ -293,7 +294,7 @@ class LFSCmd:
             try:
                 with self.firmware.partition(partname) as part:
                     with lfs_mounted(part) as fs:
-                        yield fs, name, partname
+                        yield fs, Path(name), partname
             except (ValueError, LittleFSError):
                 # Skip partition if not present in firmware file or if no lfs
                 pass
@@ -351,10 +352,8 @@ class LFSCmd:
 
     def do_grow(self) -> None:
         """Resize/grow the LittleFS filesystem."""
-        name, size = (
-            (self.args or ["vfs"])[0],
-            (int(IntArg(self.args[1])) if len(self.args) > 1 else 0),
-        )
+        name: str = (self.args or ["vfs"])[0]
+        size: int = int(IntArg(self.args[1])) if len(self.args) > 1 else 0
         with self.firmware.partition(name) as p:
             with lfs_mounted(p) as fs:
                 old, new = fs.block_count, size or p.part.size // BLOCK_SIZE
@@ -364,58 +363,58 @@ class LFSCmd:
 
     def do_ls(self) -> None:
         """Recursively list the contents of a directory on the LittleFS filesystem."""
-        for fs, name, part in self.vfs_files(self.args or ["/"]):
-            log.action(f"ls '{part}:{name}':")
-            src = Path(name)
-            for root, subdirs, files in fs.walk(str(src)):
-                d = Path(root).relative_to(src)
+        for fs, path, part in self.vfs_files(self.args or [""]):
+            log.action(f"ls '{part}:{path.as_posix()}'")
+            for root, subdirs, files in fs.walk(path.as_posix()):
+                d = Path(root).relative_to(path)
                 for f in (d / f for f in files):
-                    print(f"{f}")
+                    print(f.as_posix())
                 for f in (d / f for f in subdirs):
-                    print(f"{f}/")
+                    print(f.as_posix() + "/")
 
     def do_cat(self) -> None:
         """Print out the contents of a file on the LittleFS filesystem."""
-        for fs, name, part in self.vfs_files(self.args):
-            log.action(f"cat '{part}:{name}':")
-            if not _is_file(fs, Path(name)):
-                raise FileNotFoundError(f"{name} is not a file.")
-            with fs.open(name, "r") as f:
+        for fs, path, part in self.vfs_files(self.args):
+            log.action(f"cat '{part}:{path.as_posix()}'")
+            if not _is_file(fs, path):
+                raise FileNotFoundError(f"{path.as_posix()} is not a file.")
+            with fs.open(path.as_posix(), "r") as f:
                 print(f.read(), end="")
 
     def do_mkdir(self) -> None:
         """Create a directory on the LittleFS filesystem."""
-        for fs, name, part in self.vfs_files(self.args):
-            log.action(f"mkdir '{part}:{name}':")
-            fs.makedirs(name, exist_ok=True)
+        for fs, path, part in self.vfs_files(self.args):
+            log.action(f"mkdir '{part}:{path.as_posix()}'")
+            fs.makedirs(path.as_posix(), exist_ok=True)
+            assert _is_dir(fs, path)
 
     def do_rm(self) -> None:
         """Remove a file or directory from the LittleFS filesystem."""
-        for fs, name, part in self.vfs_files(self.args):
-            log.action(f"rm '{part}:{name}':")
-            fs.remove(name, recursive=True)
+        for fs, path, part in self.vfs_files(self.args):
+            log.action(f"rm '{part}:{path}'")
+            fs.remove(path.as_posix(), recursive=True)
 
     def do_rename(self) -> None:
         """Rename a file or directory on the LittleFS filesystem."""
         if len(self.args) != 2:
             raise ValueError("'--fs rename' requires two arguments")
         names = self.vfs_files(self.args)
-        fs, name1, part1 = next(names)
-        fs, name2, part2 = next(names)
+        fs, path1, part1 = next(names)
+        fs, path2, part2 = next(names)
         if part1 != part2:
             raise ValueError("'--fs rename' Both partitions must be the same")
-        log.action(f"rename '{part1}:{name1}' -> '{name2}:")
-        fs.rename(name1, name2)
+        log.action(f"rename '{part1}:{path1.as_posix()}' -> '{path2.as_posix()}")
+        fs.rename(path1.as_posix(), path2.as_posix())
         for _ in names:  # Finish the generator
             pass
 
     def do_get(self) -> None:
         """Copy a file or directory from the LittleFS filesystem to the local filesystem."""
         destname = self.args.pop(-1) if len(self.args) > 1 else "."
-        for fs, name, part in self.vfs_files(self.args):
-            log.action(f"get '{part}:{name}' -> '{destname}:")
+        for fs, path, part in self.vfs_files(self.args):
+            log.action(f"get '{part}:{path.as_posix()}' -> '{destname}")
 
-            source, dest = Path(name), Path(destname)
+            source, dest = Path(path), Path(destname)
             if _is_file(fs, source):  # Copy a single file
                 # If the destination is a directory, copy the file into it
                 if dest.is_dir():
@@ -423,45 +422,44 @@ class LFSCmd:
                 _get_file(fs, source, dest)
                 continue
 
-            print(f"{source} -> {dest}")
+            print(f"{source.as_posix()} -> {dest}")
             dest.mkdir(exist_ok=True)
-            for root, subdirs, files in fs.walk(str(source)):
+            for root, subdirs, files in fs.walk(source.as_posix()):
                 srcdir = Path(root)
                 dstdir = dest / srcdir.relative_to(source)
                 for src, dst in ((srcdir / f, dstdir / f) for f in files):
-                    print(f"{src} -> {dst}")
+                    print(f"{src.as_posix()} -> {dst}")
                     _get_file(fs, src, dst)
                 for src, dst in ((srcdir / f, dstdir / f) for f in subdirs):
-                    print(f"{src}/ -> {dst}/")
+                    print(f"{src.as_posix()}/ -> {dst}{os.sep}")
                     dst.mkdir(exist_ok=True)
 
     def do_put(self) -> None:
         """Copy a file or directory from the local filesystem to the LittleFS filesystem."""
         destname = self.args.pop(-1) if len(self.args) > 1 else "."
-        for fs, destname, part in self.vfs_files([destname]):
-            log.action(f"put '{' '.join(self.args)}' -> '{part}:{destname}':")
-
+        for fs, destpath, part in self.vfs_files([destname]):
             for name in self.args:
-                source, dest = Path(name), Path(destname)
+                log.action(f"put '{name}' -> '{part}:{destpath.as_posix()}':")
+                source, dest = Path(name), destpath
                 if source.is_file():  # Copy a single file
                     # If the destination is a directory, copy the file into it
                     if _is_dir(fs, dest):
                         dest /= source.name
-                    print(f"{source} -> {dest}")
+                    print(f"{source} -> {dest.as_posix()}")
                     _put_file(fs, source, dest)
                     continue
 
                 dest /= source.name
-                print(f"{source} -> {dest}")
+                print(f"{source} -> {dest.as_posix()}")
                 fs.makedirs(dest.as_posix(), exist_ok=True)
-                for root, dirs, files in os.walk(str(source)):
+                for root, dirs, files in os.walk(source):
                     srcdir = Path(root)
                     dstdir = dest / srcdir.relative_to(source)
                     for src, dst in ((srcdir / f, dstdir / f) for f in files):
-                        print(f"{src} -> {dst}")
+                        print(f"{src} -> {dst.as_posix()}")
                         _put_file(fs, src, dst)
                     for src, dst in ((srcdir / f, dstdir / f) for f in dirs):
-                        print(f"{src}/ -> {dst}/")
+                        print(f"{src}{os.sep} -> {dst.as_posix()}/")
                         fs.makedirs(dst.as_posix(), exist_ok=True)
 
     def do_mkfs(self) -> None:

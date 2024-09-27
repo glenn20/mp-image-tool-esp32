@@ -1,6 +1,4 @@
-"""A module for showing progress bars and capturing output from esptool.py.
-
-"""
+"""A module for showing progress bars and capturing output from esptool.py."""
 
 from __future__ import annotations
 

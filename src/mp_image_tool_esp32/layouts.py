@@ -13,7 +13,6 @@ Provides:
 - `print_table(table)`: Print a detailed description of the partition table.
 """
 
-
 import csv
 
 from rich import box

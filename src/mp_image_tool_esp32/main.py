@@ -172,11 +172,11 @@ def run_commands(argv: Sequence[str] | None = None) -> None:
         format=logger.FORMAT,
         handlers=[logger.richhandler],
         level=(
-            logging.ERROR
-            if args.quiet
-            else logging.DEBUG if args.debug else logging.INFO
+            logging.ERROR if args.quiet else
+            logging.DEBUG if args.debug else
+            logging.INFO
         ),
-    )
+    )  # fmt: skip
     if args.log:
         logger.set_logging(args.log)
 

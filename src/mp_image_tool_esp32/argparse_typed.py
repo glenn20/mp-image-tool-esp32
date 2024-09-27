@@ -16,6 +16,7 @@ Provides the `parser(usage, typed_namespace)` function which returns an
    `argparse.add_argument()` which also makes the command usage easier for
    humans to parse from the code.
 """
+
 from __future__ import annotations
 
 from argparse import ArgumentParser, Namespace

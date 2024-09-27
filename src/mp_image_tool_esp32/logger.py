@@ -1,6 +1,5 @@
 # MIT License: Copyright (c) 2023 @glenn20
-"""A wrapper module to provide a consistent interface for logging to console.
-"""
+"""A wrapper module to provide a consistent interface for logging to console."""
 
 import logging
 import typing
