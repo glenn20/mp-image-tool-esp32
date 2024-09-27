@@ -1,10 +1,10 @@
 /*.bin
 /*.app-bin
 /ota/
-/tests/data
 /requirements.txt
 .python-version
-/src/mp_image_tool_esp32/_version.py
+_version.py
+/packages/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

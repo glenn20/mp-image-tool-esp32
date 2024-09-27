@@ -16,38 +16,50 @@ classifiers = [
     "Topic :: Software Development :: Embedded Systems",
 ]
 requires-python = ">=3.8"
-dynamic = ["version"]
 dependencies = [
     "esptool>=4.6.2",
     "littlefs-python>=0.12.0",
     "rich>=10.12.0",
     "more-itertools>=8.8.0",
     "typing-extensions>=4.12",
-    "types-pyserial>=3.5",
 ]
+dynamic = ["version"]
 
 [project.scripts]  # The entry points for the command line tools
 mp-image-tool-esp32 = "mp_image_tool_esp32.main:main"
 
-[tool.hatch.build.targets.wheel]  # The src directory to bundle
-packages = ["src/mp_image_tool_esp32"]
-
-[tool.hatch.version]  # Get the version from git, eg: 0.0.6.dev0+g1234567
-source = "vcs"
-
-[tool.hatch.build.hooks.vcs]  # Write the version to a file
-version-file = "src/mp_image_tool_esp32/_version.py"
-
-[tool.setuptools_scm]
+[tool.hatch]
+build.targets.wheel.packages = ["src/mp_image_tool_esp32"]
+build.hooks.vcs.version-file = "src/mp_image_tool_esp32/_version.py"
+version.source = "vcs"  # Get the version from git, eg: 0.0.6.dev0+g1234567
+# Don't include the local component in the version number:
+# - so we can publish to test-pypi without bumping the version tags.
+version.raw-options.local_scheme = "no-local-version"
 
 [tool.uv]
-dev-dependencies = [  # The dependencies for running tests
-    "pytest>=8.3.2",
-    "pyyaml>=6.0.2",
-    "tox>=4.0.0",
-    "types-pyserial>=3.5",
-    "mypy>=0.910",
+dev-dependencies = [
+  # For running tests: pytest, pyyaml, requests, tox
+  "pytest>=8.3.2",
+  "pyyaml>=6.0.2",
+  "requests>=2.32.3",
+  "tox>=4.0.0",
+  # For code type checks: uv run mypy --no-sources mypy src
+  "mypy>=0.910",
+  "types-requests>=2.32.0.20240914",
+  "types-pyserial>=3.5",
+  # For linting: uv run --no-sources ruff format --check src
+  "ruff>=0.6.7",
+  # For publishing locally: uv publish --keyring-provider=subprocess --username=__token__
+  "keyring>=25",  # For uv publish --keyring-provider=subprocess
+  # Used by .git/hooks/post-{commit,checkout} to update _version.py:
+  #   uv run --frozen hatch build --hooks-only
+  "hatch>=1.12.0",
 ]
+
+[tool.uv.sources]
+# Use a local copy of littlefs-python for development
+# Use --no-sources at build time to ignore when building the wheel
+littlefs-python = { path = "packages/littlefs-python", editable = true }
 
 [tool.mypy]
 python_version = "3.9"
@@ -56,3 +68,7 @@ warn_return_any = true
 warn_unused_ignores = true
 exclude = ["tests"]
 mypy_path = "typings"
+
+[tool.ruff]
+exclude = ["_version.py"]
+lint.extend-select = ["I"]  # Enable ruffs isort rules (for compat with vscode ruff)
