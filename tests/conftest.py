@@ -12,13 +12,16 @@ from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
-import mp_image_tool_esp32
 import pytest
+import requests
 from _pytest.config import Config
+
+import mp_image_tool_esp32
 from mp_image_tool_esp32 import data_table
 
 rootdir: Path = Path(__file__).parent.parent  # The root directory of the project
-datadir: Path = Path(__file__).parent / "data"  # Location for firmware files
+testsdir: Path = Path(__file__).parent  # Location for test files
+datadir: Path = testsdir / "data"  # Location for firmware files
 
 mpi_prog: Path = rootdir / "mp-image-tool-esp32"  # Location of the tool to test
 
@@ -45,9 +48,9 @@ firmware_version = "20240602-v1.23.0"
 firmware_baseurl = "https://micropython.org/resources/firmware/"
 firmware_files = [
     f"ESP32_GENERIC-{firmware_version}.bin",
-    f"ESP32_GENERIC_S2-{firmware_version}.bin",
-    f"ESP32_GENERIC_S3-FLASH_4M-{firmware_version}.bin",
-    f"ESP32_GENERIC_C3-{firmware_version}.bin",
+    # f"ESP32_GENERIC_S2-{firmware_version}.bin",
+    # f"ESP32_GENERIC_S3-FLASH_4M-{firmware_version}.bin",
+    # f"ESP32_GENERIC_C3-{firmware_version}.bin",
 ]
 firmware_file: Path = datadir / firmware_files[0]
 mpi_last_output: str = ""
@@ -110,10 +113,10 @@ def download_firmware_files():
     for f in firmware_files:
         if not (datadir / f).exists():
             print(f"Downloading firmware file: {f}")
-            subprocess.run(
-                ["wget", f"{firmware_baseurl}{f}", "-O", f"{datadir / f}"],
-                check=True,
-            )
+            r: requests.Response = requests.get(f"{firmware_baseurl}{f}")
+            if r.status_code == 200:
+                with open(datadir / f, "wb") as fw:
+                    fw.write(r.content)
 
 
 ## pytest_configure is called after command line options have been parsed
@@ -158,7 +161,7 @@ def do_mpi_run(firmware: Path, *args: str, output: Path | None = None) -> None:
     # subprocess.run(cmd)
     if not output and outputfile.exists() and firmware.parent == Path("."):
         # Replace the firmware file with the output file
-        os.rename(outputfile, firmware)
+        os.replace(outputfile, firmware)
 
 
 def mpi_run(firmware: Path, *args: str, output: Path | None = None) -> str:
@@ -304,7 +307,7 @@ def firmware(device: Path | None, firmwarefile: Path) -> Path:
 def bootloader(firmwarefile: Path) -> bytes:
     """A fixture to extract the bootloader from a firmware file.
     The bootloader image is returned as a bytes object."""
-    return firmwarefile.read_bytes()[:BOOTLOADER_SIZE].rstrip(b"\xFF")
+    return firmwarefile.read_bytes()[:BOOTLOADER_SIZE].rstrip(b"\xff")
 
 
 @pytest.fixture()
@@ -319,4 +322,4 @@ def app_image(firmwarefile: Path) -> bytes:
     offset = FACTORY_OFFSET  # Start of app image within firmware file
     if chip_name in ("esp32", "esp32s2"):
         offset -= 0x1000  # ESP32 and ESP32S2 firmwares start at offset 0x1000
-    return firmwarefile.read_bytes()[offset:].rstrip(b"\xFF")
+    return firmwarefile.read_bytes()[offset:].rstrip(b"\xff")

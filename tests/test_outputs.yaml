@@ -81,12 +81,11 @@
 
 -q --fs ls: |
   boot.py
-  lib/
-  lib/ota/
-  lib/ota/blockdev_writer.mpy
-  lib/ota/rollback.mpy
-  lib/ota/status.mpy
-  lib/ota/update.mpy
+  ota/
+  ota/blockdev_writer.mpy
+  ota/rollback.mpy
+  ota/status.mpy
+  ota/update.mpy
 
 -q --fs cat boot.py: |
   # This file is executed on every boot (including wake-boot from deepsleep)
@@ -97,32 +96,29 @@
 
 -q --fs rename boot.py boot.bak: |
   boot.bak
-  lib/
-  lib/ota/
-  lib/ota/blockdev_writer.mpy
-  lib/ota/rollback.mpy
-  lib/ota/status.mpy
-  lib/ota/update.mpy
+  ota/
+  ota/blockdev_writer.mpy
+  ota/rollback.mpy
+  ota/status.mpy
+  ota/update.mpy
 
 -q --fs mkdir data: |
   boot.py
   data/
-  lib/
-  lib/ota/
-  lib/ota/blockdev_writer.mpy
-  lib/ota/rollback.mpy
-  lib/ota/status.mpy
-  lib/ota/update.mpy
+  ota/
+  ota/blockdev_writer.mpy
+  ota/rollback.mpy
+  ota/status.mpy
+  ota/update.mpy
 
--q --fs rm lib/ota/blockdev_writer.mpy: |
+-q --fs rm ota/blockdev_writer.mpy: |
   boot.py
-  lib/
-  lib/ota/
-  lib/ota/rollback.mpy
-  lib/ota/status.mpy
-  lib/ota/update.mpy
+  ota/
+  ota/rollback.mpy
+  ota/status.mpy
+  ota/update.mpy
 
--q --fs rm /lib: |
+-q --fs rm ota: |
   boot.py
 
 -q --fs mkfs vfs: |
@@ -130,8 +126,8 @@
 
 -q --fs df vfs: |
   # Partition       Total kB  Used kB   Free kB  Used%
-    vfs                 2048       36      2012     2%
+    vfs                 2048       28      2020     1%
 
 -q -f 6M --resize vfs=0 --fs grow --fs df: |
   # Partition       Total kB  Used kB   Free kB  Used%
-    vfs                 4096       36      4060     1%
+    vfs                 4096       28      4068     1%

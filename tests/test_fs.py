@@ -46,11 +46,11 @@ def test_mkdir(mock_device: Path) -> None:
 
 
 def test_rm_file(mock_device: Path) -> None:
-    mpi_check_ls(mock_device, "-q --fs rm lib/ota/blockdev_writer.mpy")
+    mpi_check_ls(mock_device, "-q --fs rm ota/blockdev_writer.mpy")
 
 
 def test_rm_directory(mock_device: Path) -> None:
-    mpi_check_ls(mock_device, "-q --fs rm /lib")
+    mpi_check_ls(mock_device, "-q --fs rm ota")
 
 
 def test_mkfs(mock_device: Path) -> None:
@@ -70,7 +70,7 @@ def test_grow(mock_device: Path) -> None:
 
 def test_get(mock_device: Path) -> None:
     """Download a file and compare to the original."""
-    mpi_run(mock_device, "-q --fs get /boot.py")
+    mpi_run(mock_device, "-q --fs get boot.py")
     assert Path("boot.py").exists()
     assert Path("boot.py").read_text() == (mockfs_dir / "boot.py").read_text()
 
@@ -82,7 +82,7 @@ def test_put(mock_device: Path) -> None:
     input.write_bytes(data)
     assert input.stat().st_size == 256 * 16
     mpi_run(mock_device, f"-q --fs put {input}")
-    mpi_run(mock_device, f"-q --fs get /{input} {output}")
+    mpi_run(mock_device, f"-q --fs get {input} {output}")
     assert output.exists()
     assert output.read_bytes() == input.read_bytes()
 
@@ -92,10 +92,16 @@ def test_get_directory(mock_device: Path) -> None:
     original."""
     rootfs = Path("rootfs")
     assert not rootfs.exists()
-    mpi_run(mock_device, "-q --fs get / rootfs")
+    try:
+        mpi_run(mock_device, "-q --fs get . rootfs")
+    except Exception as e:
+        for f in rootfs.rglob("*"):
+            print(f, f.is_file(), f.stat())
+        raise e
     assert rootfs.is_dir()
     new_files = list(rootfs.rglob("*"))
     orig_files = list(mockfs_dir.rglob("*"))
+    assert len(orig_files) > 3  # We expect 6 files in the mockfs
     assert len(new_files) == len(orig_files)
     for new, orig in zip(new_files, orig_files):
         assert new.relative_to(rootfs) == orig.relative_to(mockfs_dir)
@@ -111,10 +117,11 @@ def test_put_directory(mock_device: Path) -> None:
     """Upload the entire filesystem to a directory and compare to the
     original."""
     rootfs = Path("rootfs")
-    assert not rootfs.exists()
-    mpi_run(mock_device, "-q --fs mkdir /rootfs")
-    mpi_run(mock_device, f"-q --fs put {mockfs_dir} /rootfs")
-    mpi_run(mock_device, f"-q --fs get /rootfs {rootfs}")
+    if rootfs.exists():
+        shutil.rmtree(rootfs)
+    mpi_run(mock_device, "-q --fs mkdir rootfs")
+    mpi_run(mock_device, f"-q --fs put '{mockfs_dir.as_posix()}' rootfs")
+    mpi_run(mock_device, f"-q --fs get rootfs {rootfs}")
     assert rootfs.is_dir()
     new_dir = rootfs / mockfs_dir.name
     new_files = list(new_dir.rglob("*"))
