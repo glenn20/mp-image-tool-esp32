@@ -62,7 +62,7 @@ dev-dependencies = [
 littlefs-python = { path = "packages/littlefs-python", editable = true }
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 disallow_untyped_defs = true
 warn_return_any = true
 warn_unused_ignores = true
