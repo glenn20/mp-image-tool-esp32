@@ -67,11 +67,6 @@ dev-dependencies = [
   "hatch-vcs>=0.3.0",  # For building and updating _version.py
 ]
 
-[tool.uv.sources]
-# Use a local copy of littlefs-python for development
-# Use --no-sources at build time to ignore when building the wheel
-littlefs-python = { path = "packages/littlefs-python", editable = true }
-
 [tool.tox]  # https://tox.wiki/en/latest/config.html#pyproject-toml-native
 env_list = [
     "clean", "mypy", "lint", "format",
@@ -93,7 +88,6 @@ env_run_base.package = "editable"
 
 [tool.mypy]
 files = ["src"]
-exclude = ["packages"]
 python_version = "3.9"
 disallow_untyped_defs = true
 warn_return_any = true
