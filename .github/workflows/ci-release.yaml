@@ -15,6 +15,7 @@ jobs:
 
   build:
     name: Build
+    needs: tests
     uses: glenn20/python-ci/.github/workflows/build.yaml@main
 
   publish-test:
@@ -28,7 +29,7 @@ jobs:
 
   publish-pypi:
     name: Publish to pypi
-    needs: build
+    needs: publish-test
     uses: ./.github/workflows/publish.yaml
     with:
       pypi: pypi
@@ -38,7 +39,7 @@ jobs:
   github-release:
     name: Create GitHub release
     uses: glenn20/python-ci/.github/workflows/release.yaml@main
-    needs: publish-test
+    needs: publish-pypi
     permissions:
       contents: write  # IMPORTANT: mandatory for github release
       id-token: write  # IMPORTANT: mandatory for github release
