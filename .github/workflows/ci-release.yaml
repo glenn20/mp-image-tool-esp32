@@ -23,7 +23,6 @@ jobs:
 
   publish-pypi:
     name: Publish to pypi
-    if: false  # Disabled for now
     uses: ./.github/workflows/publish.yaml
     with:
       pypi: pypi
