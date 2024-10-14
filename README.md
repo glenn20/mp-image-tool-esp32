@@ -131,41 +131,24 @@ operations on attached esp32 devices:
 
 ## Installation
 
-First, copy this github repo into a folder somewhere:
+### Install from PYPI
+
+- Using pip: `pip install mp-image-tool-esp32`, or
+- Using uv: `uv tool install mp-image-tool-esp32`.
+
+### Install from github source
+
+I recommend using [`uv`](https://docs.astral.sh/uv/) to install and manage
+dependencies and dev environments.
 
 ```bash
 git clone https://github.com/glenn20/mp-image-tool-esp32
 cd mp-image-tool-esp32
+uv build  # To build an installable .whl file
+uv tool install dist/mp_image_tool_esp32-0.0.12-py3-none-any.whl
 ```
 
-If you use a python virtual environment (recommended), make sure it is active.
-
-I recommend using [`uv`](https://docs.astral.sh/uv/) (`pip install uv`) to
-install and manage dependencies and dev environments.
-
-To install in your python environment:
-
-- Install in "editable mode":
-
-  ```bash
-  pip install -e .
-  ```
-
-- OR build and install a distributable `.whl` package
-
-  ```bash
-  uvx --from build pyproject-build --installer uv
-  pip install dist/mp_image_tool_esp32-0.0.5-py3-none-any.whl
-  ```
-
-  You may prefer to use `python -m build` to build the `.whl` files instead.
-
-- To run the tests:
-
-  ```bash
-  uv run pytest  # To run the tests
-  uv run tox  # Using `tox` to run the tests for multiple python versions
-  ```
+To run the tests: `uv run pytest` or `uv run tox`.
 
 ## Examples
 
