@@ -20,9 +20,13 @@ jobs:
       os: '["ubuntu-latest"]'
       python-version: '["3.9", "3.13"]'
 
+  build:
+    name: Build
+    uses: glenn20/python-ci/.github/workflows/build.yaml@main
+
   publish-test:
     name: Publish to test.pypi
-    needs: tests
+    needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     uses: ./.github/workflows/publish.yaml
     with:

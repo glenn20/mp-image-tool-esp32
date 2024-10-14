@@ -13,8 +13,13 @@ jobs:
       os: '["ubuntu-latest", "windows-latest", "macos-latest"]'
       python-version: '["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]'
 
+  build:
+    name: Build
+    uses: glenn20/python-ci/.github/workflows/build.yaml@main
+
   publish-test:
     name: Publish to test.pypi
+    needs: build
     uses: ./.github/workflows/publish.yaml
     with:
       pypi: test.pypi
@@ -23,6 +28,7 @@ jobs:
 
   publish-pypi:
     name: Publish to pypi
+    needs: build
     uses: ./.github/workflows/publish.yaml
     with:
       pypi: pypi

@@ -34,15 +34,8 @@ on:
         type: string
 
 jobs:
-  build:
-    name: Build
-    uses: glenn20/python-ci/.github/workflows/build.yaml@main
-    permissions:
-      id-token: none
-
   publish:
     name: Publish to ${{ inputs.pypi }}
-    needs: build
     runs-on: ubuntu-latest
     environment:
       name: publish-${{ inputs.pypi }}
