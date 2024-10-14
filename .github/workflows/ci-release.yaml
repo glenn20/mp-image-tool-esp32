@@ -32,7 +32,7 @@ jobs:
     needs: publish-test
     uses: ./.github/workflows/publish.yaml
     with:
-      pypi: pypi
+      pypi: upload.pypi
     permissions:
       id-token: write  # IMPORTANT: mandatory for trusted publishing!
 
