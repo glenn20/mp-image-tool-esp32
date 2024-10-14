@@ -47,19 +47,17 @@ version.raw-options.git_describe_command = [
 
 [tool.uv]
 dev-dependencies = [
-  # For running tests: pytest, pyyaml, requests, tox
+  # For running tests: pytest, pyyaml, requests, tox, mypy, ruff
   "pytest>=8.3.2",
   "pyyaml>=6.0.2",
   "requests>=2.32.3",
   "tox>=4.0.0",
   "tox-uv>=0.3.0",  # uv support for tox
   "pytest-cov>=3.0.0",
-  # For code type checks: uv run mypy --no-sources mypy src
-  "mypy>=0.910",
+  "mypy>=0.910",  # For code type checks: uv run mypy --no-sources mypy src
   "types-requests>=2.32.0.20240914",
   "types-pyserial>=3.5",
-  # For linting: uv run --no-sources ruff format --check src
-  "ruff>=0.6.7",
+  "ruff>=0.6.7",  # For linting: uv run --no-sources ruff format --check src
   "keyring>=25",  # For uv publish --keyring-provider=subprocess
   # Used by .git/hooks/post-{commit,checkout} to update _version.py:
   #   uv run --frozen hatch build --hooks-only
