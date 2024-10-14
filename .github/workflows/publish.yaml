@@ -1,104 +1,55 @@
-name: Publish and Release
+name: Publish python package
+
+# description: |- A github reusable workflow to publish a python package to
+#   pypi.org or test.pypi.org.
+#
+#   Input options:
+#   - `pypi: test.pypi`: Publish to test.pypi.org (default).
+#   - `pypi: pypi`: Publish to pypi.org.
+#
+#   The workflow invokes the github composite action
+#   `glenn20/python-ci/publish@v1` to publish the package.
+#
+#   Requirements:
+#   1. For trusted publishing, the publishing workflow must be in the project
+#      repository, so copy this workflow file to
+#      `.github/workflows/publish.yaml` in your repository.
+#   2. Create the `publish-test.pypi` and `publish-pypi` Environments in your
+#      github repository (Settings->Environments->New Environment).
+#   3. Add this workflow as a "trusted publisher" on your pypi and test.pypi
+#      project pages (add the name of the relevant Environment for additional
+#      access control).
+#   4. Call this workflow from a parent workflow with the `pypi` input set to
+#      "pypi" or "test.pypi" (default).
+#
+#   Invoke with `uses: ./.github/workflows/publish@v1`
 
 on:
-  release:
-    types: [published]
+  workflow_call:
+    inputs:
+      pypi:
+        description: 'Set to "pypi" or "test.pypi" (default).'
+        default: 'test.pypi'
+        required: false
+        type: string
 
 jobs:
   build:
-    name: Build distribution
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Fetch all history for tags for versioning
-
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
-        with:
-          enable-cache: true
-          cache-dependency-glob: "uv.lock"
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version-file: "pyproject.toml"
-
-      - name: Install dependencies
-        run: uv sync --no-sources --all-extras --dev
-
-      - name: Build
-        run: uv build --no-sources
-
-      - name: Store the distribution packages
-        uses: actions/upload-artifact@v4
-        with:
-          name: python-package-distributions
-          path: dist/
+    name: Build
+    uses: glenn20/python-ci/.github/workflows/build.yaml@main
+    permissions:
+      id-token: none
 
   publish:
-    name: Publish distribution
+    name: Publish to ${{ inputs.pypi }}
     needs: build
     runs-on: ubuntu-latest
-
     environment:
-      name: release
-      url: https://pypi.org/p/mp-image-tool-esp32
+      name: publish-${{ inputs.pypi }}
+      url: https://${{ inputs.pypi }}.org/p/${{ needs.build.outputs.package-name }}
     permissions:
       id-token: write  # IMPORTANT: mandatory for trusted publishing
-
     steps:
-      - name: Download all the dists
-        uses: actions/download-artifact@v4
+      - uses: glenn20/python-ci/publish@main
         with:
-          name: python-package-distributions
-          path: dist/
-
-      - name: Publish distribution to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-
-
-  github-release:
-    name: Sign the distribution and upload to GitHub Release
-    needs: publish
-    runs-on: ubuntu-latest
-
-    permissions:
-      contents: write  # IMPORTANT: mandatory for making GitHub Releases
-      id-token: write  # IMPORTANT: mandatory for sigstore
-
-    steps:
-      - name: Download all the dists
-        uses: actions/download-artifact@v4
-        with:
-          name: python-package-distributions
-          path: dist/
-
-      - name: Sign the dists with Sigstore
-        uses: sigstore/gh-action-sigstore-python@v2.1.1
-        with:
-          inputs: >-
-            ./dist/*.tar.gz
-            ./dist/*.whl
-
-      - name: Create GitHub Release
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: >-
-          gh release create
-          '${{ github.ref_name }}'
-          --repo '${{ github.repository }}'
-          --notes ""
-
-      - name: Upload artifact signatures to GitHub Release
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        # Upload to GitHub Release using the `gh` CLI.
-        # `dist/` contains the built packages, and the
-        # sigstore-produced signatures and certificates.
-        run: >-
-          gh release upload
-          '${{ github.ref_name }}' dist/**
-          --repo '${{ github.repository }}'
+          pypi: ${{ inputs.pypi }}
