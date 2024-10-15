@@ -20,7 +20,7 @@ name: Publish python package
 #      project pages (add the name of the relevant Environment for additional
 #      access control).
 #   4. Call this workflow from a parent workflow with the `pypi` input set to
-#      "upload.pypi" or "test.pypi" (default).
+#      "pypi" or "test.pypi" (default).
 #
 #   Invoke with `uses: ./.github/workflows/publish@v1`
 
@@ -28,10 +28,16 @@ on:
   workflow_call:
     inputs:
       pypi:
-        description: 'Set to "pypi" or "test.pypi" (default).'
+        description: 'Publish to `upload.pypi` or `test.pypi`:'
         default: 'test.pypi'
         required: false
         type: string
+  workflow_dispatch:
+    inputs:
+      pypi:
+        description: 'Set to "upload.pypi" or "test.pypi" (default).'
+        options: ['test.pypi', 'upload.pypi']
+        type: choice
 
 jobs:
   publish:
@@ -39,10 +45,11 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: publish-${{ inputs.pypi }}
-      # url: https://${{ inputs.pypi }}.org/p/${{ needs.build.outputs.package-name }}
+      url: https://${{ inputs.pypi }}.org/p/${{ steps.publish.outputs.package-name }}
     permissions:
       id-token: write  # IMPORTANT: mandatory for trusted publishing
     steps:
-      - uses: glenn20/python-ci/publish@main
+      - uses: glenn20/python-ci/publish@v1
+        id: publish
         with:
           pypi: ${{ inputs.pypi }}

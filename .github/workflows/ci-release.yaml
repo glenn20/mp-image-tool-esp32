@@ -1,5 +1,18 @@
 name: Publish and Release
 
+#   A github reusable workflow to:
+#   - Run code checks and tests on multiple python versions and platforms;
+#   - Publish a python package to test.pypi.org and pypi.org; and
+#   - Create a GitHub Release.
+#
+#   The workflow is triggered on:
+#   - push to version tags matching "v*", eg. "v1.0.0", or
+#   - manual workflow_dispatch (eg. from the github `Actions` tab):
+#     - will produce a release with a version tag like: "v1.0.1.devN"
+#
+#   Uses reusable workflows from the <https://github.com/glenn20/python-ci>
+#   repository.
+
 on:
   push:
     tags: ["v*"]  # Publish on tags matching "v*", eg. "v1.0.0"
@@ -8,20 +21,15 @@ on:
 jobs:
   tests:
     name: Tests
-    uses: glenn20/python-ci/.github/workflows/test.yaml@main
+    uses: glenn20/python-ci/.github/workflows/check-test-build.yaml@main
     with:
       os: '["ubuntu-latest", "windows-latest", "macos-latest"]'
       python-version: '["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]'
 
-  build:
-    name: Build
-    needs: tests
-    uses: glenn20/python-ci/.github/workflows/build.yaml@main
-
   publish-test:
     name: Publish to test.pypi
-    needs: build
     uses: ./.github/workflows/publish.yaml
+    needs: tests
     with:
       pypi: test.pypi
     permissions:
@@ -29,8 +37,8 @@ jobs:
 
   publish-pypi:
     name: Publish to pypi
-    needs: publish-test
     uses: ./.github/workflows/publish.yaml
+    needs: tests
     with:
       pypi: upload.pypi
     permissions:
@@ -38,8 +46,8 @@ jobs:
 
   github-release:
     name: Create GitHub release
-    uses: glenn20/python-ci/.github/workflows/release.yaml@main
-    needs: publish-pypi
+    uses: glenn20/python-ci/.github/workflows/release.yaml@v1
+    needs: tests
     permissions:
       contents: write  # IMPORTANT: mandatory for github release
       id-token: write  # IMPORTANT: mandatory for github release

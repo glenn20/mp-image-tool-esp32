@@ -15,19 +15,17 @@ on:
 jobs:
   tests:
     name: CI tests
-    uses: glenn20/python-ci/.github/workflows/test.yaml@main
+    uses: glenn20/python-ci/.github/workflows/check-test-build.yaml@v1
     with:  # A short test matrix for fast testing of commits
       os: '["ubuntu-latest"]'
       python-version: '["3.9", "3.13"]'
 
-  build:
-    name: Build
-    uses: glenn20/python-ci/.github/workflows/build.yaml@main
-
   publish-test:
     name: Publish to test.pypi
-    needs: build
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: tests
+    if: |
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
     uses: ./.github/workflows/publish.yaml
     with:
       pypi: test.pypi
