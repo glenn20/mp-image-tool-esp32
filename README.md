@@ -14,18 +14,20 @@ ESP32-S2 and ESP32-S3 firmware images and devices.
 [Examples](#examples) | [Filesystem Operations](#filesystem-operations) | [OTA Updates](#ota-firmware-updates) | [Usage](#usage)**
 
 ```console
-$ mp-image-tool-esp32 ESP32_GENERIC-20231005-v1.21.0.bin
-Opening image file: ESP32_GENERIC-20231005-v1.21.0.bin...
-Chip type: esp32
-Flash size: 4MB
-Micropython App size: 0x186bb0 bytes (1,562 KB)
-Partition table (flash size: 4MB):
-# Name             Type     SubType      Offset       Size      (End)  Flags
-  nvs              data     nvs          0x9000     0x6000     0xf000  0x0  (24.0 kB)
-  phy_init         data     phy          0xf000     0x1000    0x10000  0x0   (4.0 kB)
-  factory          app      factory     0x10000   0x1f0000   0x200000  0x0   (1.9 MB)
-  vfs              data     fat        0x200000   0x200000   0x400000  0x0   (2.0 MB)
-Micropython app fills 78.8% of factory partition (421 kB free)
+❯ mp-image-tool-esp32 ESP32_GENERIC-20240602-v1.23.0.bin
+Running mp-image-tool-esp32 v0.0.13 (Python 3.12.6).
+Opening ESP32_GENERIC-20240602-v1.23.0.bin...
+Found esp32 firmware file (4MB flash).
+                        Partition table (flash size: 4MB):
+╭──────────┬──────┬─────────┬──────────┬──────────┬──────────┬───────┬───────────╮
+│ Name     │ Type │ SubType │   Offset │     Size │      End │ Flags │           │
+├──────────┼──────┼─────────┼──────────┼──────────┼──────────┼───────┼───────────┤
+│ nvs      │ data │ nvs     │   0x9000 │   0x6000 │   0xf000 │   0x0 │ (24.0 kB) │
+│ phy_init │ data │ phy     │   0xf000 │   0x1000 │  0x10000 │   0x0 │  (4.0 kB) │
+│ factory  │ app  │ factory │  0x10000 │ 0x1f0000 │ 0x200000 │   0x0 │  (1.9 MB) │
+│ vfs      │ data │ fat     │ 0x200000 │ 0x200000 │ 0x400000 │   0x0 │  (2.0 MB) │
+╰──────────┴──────┴─────────┴──────────┴──────────┴──────────┴───────┴───────────╯
+Micropython app fills 82.3% of factory partition (350 kB free)
 ```
 
 ## Features
@@ -155,12 +157,12 @@ To run the tests: `uv run pytest` or `uv run tox`.
 
 ## Examples
 
-#### Change the flash size of a firmware file and expand the vfs partition
+### Change the flash size of a firmware file and expand the vfs partition
 
 ```console
 ❯ mp-image-tool-esp32 ESP32_GENERIC-20240602-v1.23.0.bin -f 8M --resize vfs=0
 Running mp-image-tool-esp32 v0.0.13 (Python 3.12.6).
-Opening tests/data/ESP32_GENERIC-20240602-v1.23.0.bin...
+Opening ESP32_GENERIC-20240602-v1.23.0.bin...
 Found esp32 firmware file (4MB flash).
                         Partition table (flash size: 4MB):
 ╭──────────┬──────┬─────────┬──────────┬──────────┬──────────┬───────┬───────────╮
@@ -187,7 +189,7 @@ Writing partition table...
 Updating flash size (8MB) in bootloader header...
 ```
 
-#### Change the flash size of firmware on a device and write an OTA partition table
+### Change the flash size of firmware on a device and write an OTA partition table
 
 ```console
 ❯ mp-image-tool-esp32 u0 -f 8M --table ota
@@ -220,7 +222,7 @@ Erasing data partition: nvs...
 Erasing data partition: otadata...
 ```
 
-#### Perform an OTA firmware update
+### Perform an OTA firmware update
 
 ```console
 ❯ mp-image-tool-esp32 u0 --ota-update ESP32_GENERIC-20240602-v1.23.0.app-bin
@@ -276,8 +278,8 @@ filesystem partition other than `vfs`, eg. `--fs ls vfs2:/recordings`.
 
 The `--fs` commands operate directly on the filesystem on the flash storage, and
 not through the micropython repl. Some operations may be much faster using
-this method, though the current implementation does not yet support block
-caching which should provide further performance improvements.
+this method, ~~though the current implementation does not yet support block
+caching which should provide further performance improvements~~.
 
 Eg. `mp-image-tool-esp32 a0 --fs mkfs vfs --fs put ./rootfs/* /` will create
 a new littlefs filesystem on the 'vfs' partition and initialise it with the
