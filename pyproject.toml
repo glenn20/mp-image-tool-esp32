@@ -65,7 +65,8 @@ dev-dependencies = [
   "hatch-vcs>=0.3.0",  # For building and updating _version.py
 ]
 
-[tool.tox]  # https://tox.wiki/en/latest/config.html#pyproject-toml-native
+# https://tox.wiki/en/latest/config.html#pyproject-toml-native
+[tool.tox]  #
 env_list = [
     "clean", "mypy", "lint", "format",
     "3.8", "3.9", "3.10", "3.11", "3.12", "3.13"

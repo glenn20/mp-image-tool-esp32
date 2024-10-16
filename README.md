@@ -1,5 +1,7 @@
 # mp-image-tool-esp32: Working with esp32 firmware files and devices
 
+![CI Tests](https://github.com/glenn20/mp-image-tool-esp32/actions/workflows/ci-tests.yaml/badge.svg)
+
 Tool for manipulating partition tables and files in MicroPython esp32 firmware
 image files and device flash storage.
 
