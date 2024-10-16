@@ -5,7 +5,7 @@ name: Publish python package
 #
 #   Input options:
 #   - `pypi: test.pypi`: Publish to test.pypi.org (default).
-#   - `pypi: pypi`: Publish to pypi.org.
+#   - `pypi: upload.pypi`: Publish to pypi.org.
 #
 #   The workflow invokes the github composite action
 #   `glenn20/python-ci/publish@v1` to publish the package.
@@ -20,7 +20,7 @@ name: Publish python package
 #      project pages (add the name of the relevant Environment for additional
 #      access control).
 #   4. Call this workflow from a parent workflow with the `pypi` input set to
-#      "pypi" or "test.pypi" (default).
+#      "upload.pypi" or "test.pypi" (default).
 #
 #   Invoke with `uses: ./.github/workflows/publish@v1`
 
