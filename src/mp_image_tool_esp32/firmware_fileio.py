@@ -129,9 +129,9 @@ class FirmwareDeviceIO(BinaryIO):
             and self.esptool.flash_size != self.header.flash_size
         ):
             log.warning(
-                f"Detected flash size ({self.esptool.flash_size//MB}MB) is "
+                f"Detected flash size ({self.esptool.flash_size // MB}MB) is "
                 f"different from firmware bootloader "
-                f"({self.header.flash_size//MB}MB).\n"
+                f"({self.header.flash_size // MB}MB).\n"
                 "  [italic]Use the '-f' option to change the size in the bootloader."
             )
 

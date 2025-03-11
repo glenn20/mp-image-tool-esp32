@@ -131,7 +131,9 @@ class ESPToolSubprocess(ESPTool):
         self.flash_size = int(match.group(1)) * MB if match else 0
         if self.chip_name:
             self.esptool_args = " ".join((self.esptool_args, "--chip", self.chip_name))
-        log.debug(f"Detected {self.chip_name} with flash size {self.flash_size/MB}MB.")
+        log.debug(
+            f"Detected {self.chip_name} with flash size {self.flash_size / MB}MB."
+        )
 
     def esptool_run(self, cmd: str) -> None:
         """Run an esptool command in a subprocess and echo output to sys.stdout."""

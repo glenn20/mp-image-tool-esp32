@@ -37,10 +37,11 @@ class IntArg(int):
     kilobytes).
     """
 
+    # 'int' is immutable, so we need to override __new__() instead of __init__().
     def __new__(cls, arg: str) -> IntArg:
         if not arg:
             arg = "0"
-        unit = 1
+        unit: int = 1
         for k, v in SIZE_UNITS.items():
             if arg.upper().endswith(k.upper()):
                 arg, unit = arg[: -len(k)], v

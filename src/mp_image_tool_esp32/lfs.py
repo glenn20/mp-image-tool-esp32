@@ -55,8 +55,7 @@ class CacheStats:
 
     def summary(self) -> str:
         return (
-            f"cache hits: {self.hits} cache misses: "
-            f"{self.misses} writes: {self.writes}"
+            f"cache hits: {self.hits} cache misses: {self.misses} writes: {self.writes}"
         )
 
 
@@ -176,9 +175,9 @@ class UserContextFile(UserContext):
     def read(self, cfg: LFSConfig, block: int, off: int, size: int) -> bytearray:
         log.debug("LFS Read : Block: %d, Offset: %d, Size=%d" % (block, off, size))
         assert off == 0, "Read offset must be 0"
-        assert (
-            size == cfg.block_size == self.block_cache.block_size
-        ), "Read size must be block size"
+        assert size == cfg.block_size == self.block_cache.block_size, (
+            "Read size must be block size"
+        )
         start, end = block, block + (off + size) // cfg.block_size
         data = b"".join(self.read_block(i) for i in range(start, end + 1))
         return bytearray(data[off : off + size])
@@ -187,9 +186,9 @@ class UserContextFile(UserContext):
         log.debug("LFS Prog : Block: %d, Offset: %d, Size=%d" % (block, off, len(data)))
         block_size = cfg.block_size
         assert off == 0, "Write offset must be 0"
-        assert (
-            len(data) == block_size == self.block_cache.block_size
-        ), "Write size must be block size"
+        assert len(data) == block_size == self.block_cache.block_size, (
+            "Write size must be block size"
+        )
         for i in range(len(data) // block_size):
             self.write_block(
                 block + i,
@@ -329,7 +328,7 @@ class LFSCmd:
             print(f"  Block Size:  {fs.cfg.block_size:9d}  /  0x{fs.cfg.block_size:X}")
             print(f"  Blocks Total:{fs.block_count:9d}")
             print(f"  Blocks Used: {fs.used_block_count:>9d}")
-            print(f"  Blocks Free: {fs.block_count-fs.used_block_count:>9d}")
+            print(f"  Blocks Free: {fs.block_count - fs.used_block_count:>9d}")
 
     def do_df(self) -> None:
         """Print size and usage information about the LittleFS filesystem."""
