@@ -6,7 +6,6 @@ import typing
 from typing import Any
 
 import esptool
-import littlefs
 import serial
 from rich.console import Console, ConsoleRenderable
 from rich.highlighter import NullHighlighter
@@ -52,7 +51,7 @@ richhandler = Handler(
     show_level=False,
     show_path=False,
     rich_tracebacks=True,
-    tracebacks_suppress=[esptool, serial, littlefs],
+    tracebacks_suppress=[esptool, serial],
 )
 richhandler.setFormatter(logging.Formatter(FORMAT))
 
