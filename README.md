@@ -141,6 +141,12 @@ operations on attached esp32 devices:
 - Using pip: `pip install mp-image-tool-esp32`, or
 - Using uv: `uv tool install mp-image-tool-esp32`.
 
+Support for the `fs` command (reading, checking and copying files to/from
+littlefs filesystems on your device), requires selecting the `littlefs` extra
+eg: `pip install mp-image-tool-esp32[littlefs]`. This has been made available as
+an extra because installing the `littlefs-python` package requires extra build
+tools on your computer, which you may avoid if you don't need filesystem access.
+
 ### Install from github source
 
 I recommend using [`uv`](https://docs.astral.sh/uv/) to install and manage
@@ -467,7 +473,7 @@ options:
                         is appropriate for reading app images from flash
                         storage.
   --fs CMD [CMD ...]    Operate on files in the `vfs` or other filesystem
-                        partitions.
+                        partitions (requires `littlefs-python` installed).
 
 Where SIZE is a decimal or hex number with an optional suffix (M=megabytes,
 K=kilobytes, B=blocks (0x1000=4096 bytes)). --fs commands include: ls, get,

@@ -26,10 +26,25 @@ from . import __version__, layouts, logger, ota_update
 from .argparse_typed import parser as typed_parser
 from .argtypes import MB, ArgList, B, IntArg, PartList
 from .firmware import Firmware
-from .lfs import lfs_cmd
 from .partition_table import PartitionError, PartitionTable
 
 log = logger.getLogger(__name__)
+
+try:
+    from .lfs import lfs_cmd
+except ImportError as err:
+    # If the `littlefs-python` package is not installed, disable the "fs"
+    # command, but allow the rest of the program to run.
+    if err.name != "littlefs":
+        raise err
+
+    def lfs_cmd(firmware: Firmware, command: str, args: list[str] = []) -> None:
+        """A command line processor for LittleFS filesystem operations."""
+        log.error(
+            "'fs' commands require the 'littlefs-python' package. "
+            "Install it with 'pip install littlefs-python'"
+        )
+        raise ImportError("Missing 'littlefs-python' package")
 
 
 # `TypedNamespace` and the `usage` string together provide three things:

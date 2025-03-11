@@ -1,7 +1,3 @@
-[build-system]
-requires = ["hatchling", "hatch-vcs"]
-build-backend = "hatchling.build"
-
 [project]
 name = "mp-image-tool-esp32"
 description = "Tool for manipulating micropython ESP32 firmware files"
@@ -18,7 +14,6 @@ classifiers = [
 requires-python = ">=3.8"
 dependencies = [
     "esptool>=4.6.2",
-    "littlefs-python>=0.12.0",
     "rich>=10.12.0",
     "more-itertools>=8.8.0",
     "typing-extensions>=4.12",
@@ -28,10 +23,34 @@ dynamic = ["version"]
 [project.scripts]  # The entry points for the command line tools
 mp-image-tool-esp32 = "mp_image_tool_esp32.main:main"
 
+[project.optional-dependencies]
+littlefs = ["littlefs-python>=0.12.0"]
+
+[dependency-groups]
+typing = ["mypy>=0.910", "types-requests>=2.32.0.20240914", "types-pyserial>=3.5"]
+test = [
+    {include-group = "typing"},
+    "ruff>=0.6.7", "pytest>=8.3.2", "pytest-cov>=3.0.0", "requests>=2.32.3",
+    "pyyaml>=6.0.2", "tox>=4.22.0", "tox-uv>=0.3.0",
+]
+dev = [
+    {include-group = "test"},
+    "keyring>=25",  # For uv publish --keyring-provider=subprocess
+    # Used by .git/hooks/post-{commit,checkout} to update _version.py:
+    #   uv run --frozen hatch build --hooks-only
+    "hatch>=1.12.0",
+    "hatch-vcs>=0.3.0",  # For building and updating _version.py
+]
+
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+# Build python packages and update version number
 [tool.hatch]
-build.hooks.vcs.version-file = "src/mp_image_tool_esp32/_version.py"
 build.targets.wheel.packages = ["src/mp_image_tool_esp32"]
 version.source = "vcs"  # Get the version from git, eg: 0.0.6.dev0+g1234567
+build.hooks.vcs.version-file = "src/mp_image_tool_esp32/_version.py"
 # Drop the local version part (eg: +g1234567) or pypi will reject package
 version.raw-options.local_scheme = "no-local-version"
 # A manually triggered github release workflow may generate a new tag
@@ -45,45 +64,25 @@ version.raw-options.git_describe_command = [
     "--match", "v*.[0-9][0-9][0-9]",
 ]
 
-[tool.uv]
-dev-dependencies = [
-  # For running tests: pytest, pyyaml, requests, tox, mypy, ruff
-  "pytest>=8.3.2",
-  "pyyaml>=6.0.2",
-  "requests>=2.32.3",
-  "tox>=4.0.0",
-  "tox-uv>=0.3.0",  # uv support for tox
-  "pytest-cov>=3.0.0",
-  "mypy>=0.910",  # For code type checks: uv run mypy --no-sources mypy src
-  "types-requests>=2.32.0.20240914",
-  "types-pyserial>=3.5",
-  "ruff>=0.6.7",  # For linting: uv run --no-sources ruff format --check src
-  "keyring>=25",  # For uv publish --keyring-provider=subprocess
-  # Used by .git/hooks/post-{commit,checkout} to update _version.py:
-  #   uv run --frozen hatch build --hooks-only
-  "hatch>=1.12.0",
-  "hatch-vcs>=0.3.0",  # For building and updating _version.py
-]
-
 # https://tox.wiki/en/latest/config.html#pyproject-toml-native
-[tool.tox]  #
+[tool.tox]
+requires = ["tox>=4.22", "tox-uv>=1.13"]
 env_list = [
-    "clean", "mypy", "lint", "format",
+    "clean", "typing", "lint", "format",
     "3.8", "3.9", "3.10", "3.11", "3.12", "3.13"
 ]
-requires = ["tox>=4.19", "tox-uv>=1.13"]
 env.clean.commands = [["coverage", "erase"]]  # Cleanup coverage data
-env.clean.deps = ["coverage"]
 env.clean.skip_install = true
-env.mypy.commands = [["mypy"]]
-env.mypy.deps = ["mypy", "pytest", "types-requests", "types-pyserial"]
+env.typing.commands = [["mypy"]]
 env.lint.commands = [["ruff", "check"]]
-env.lint.deps = ["ruff"]
 env.format.commands = [["ruff", "format", "--check"]]
-env.format.deps = ["ruff"]
+env.3.8.commands = [["pytest", "--cov=mp_image_tool_esp32"]]
+env.3.13.commands = [["pytest", "--cov=mp_image_tool_esp32"]]
 env_run_base.commands = [["pytest"]]
-env_run_base.deps = ["pytest", "pytest-cov", "requests", "pyyaml"]
-env_run_base.package = "editable"
+env_run_base.dependency_groups = ["test"]
+env_run_base.extras = ["littlefs"]  # Include optional dependencies
+env_run_base.package = "wheel"  # Build package wheel and install into environments
+env_run_base.wheel_build_env = ".pkg"  # Re-use one wheel for each environment
 
 [tool.mypy]
 files = ["src"]
@@ -98,12 +97,7 @@ include = ["src/**/*.py"]
 exclude = ["_version.py"]
 lint.extend-select = ["I"]  # Enable ruffs isort rules (for compat with vscode ruff)
 
-[tool.pytest.ini_options]
-minversion = "6.0"
-addopts = ["--cov"]
-
 [tool.coverage]
-run.source = ["src"]
 run.omit = ["_version.py"]
 report.skip_covered = true
 append = true
