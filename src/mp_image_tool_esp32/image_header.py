@@ -15,7 +15,11 @@ from ctypes import (
 from functools import cached_property
 from typing import IO, Any, Tuple
 
+from . import logger
+
 MB = 1024 * 1024
+
+log = logger.getLogger(__name__)
 
 
 # See https://docs.espressif.com/projects/esptool/en/latest/esp32
@@ -155,18 +159,20 @@ class ImageHeader(ImageHeaderStruct):
 
     def get_image_size(self, data: bytes | bytearray) -> int:
         """Return the size of the application or bootloader image in `data`."""
-        n = self.size
-        for _ in range(self.num_segments):  # Skip over each segment in the image
-            segment_size = int.from_bytes(data[n + 4 : n + 8], "little")
-            n += segment_size + 8
-            if n >= len(data):
+        offset = self.size
+        log.debug(f"Reading app image (max size = {len(data)} bytes).")
+        for i in range(self.num_segments):  # Skip over each segment in the image
+            segment_size = int.from_bytes(data[offset + 4 : offset + 8], "little")
+            offset += segment_size + 8
+            log.debug(f"Segment {i}: {segment_size} bytes (total {offset} bytes)")
+            if offset >= len(data):
                 raise ValueError(
                     f"Invalid image file: segment size ({segment_size} bytes) "
                     f"exceeds image size ({len(data)} bytes)."
                 )
-        n += 1  # Allow for the checksum byte
-        n = (n + 0xF) & ~0xF  # Round up to a multiple of 16 bytes
-        return n
+        offset += 1  # Allow for the checksum byte
+        offset = (offset + 0xF) & ~0xF  # Round up to a multiple of 16 bytes
+        return offset
 
     def calculate_image_size_and_hash(
         self, data: bytes | bytearray

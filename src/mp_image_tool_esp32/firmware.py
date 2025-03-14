@@ -192,16 +192,19 @@ class Firmware:
                     continue
                 data += part.read()  # Read the rest of the partition
             header = ImageHeader.from_bytes(data)
-            size, calc_sha, stored_sha = header.check_image_hash(data)
-            size += len(stored_sha)  # Include the stored hash in the size
-            sha, stored = calc_sha.hex(), stored_sha.hex()
-            log.debug(f"{name}: {size=}\n       {sha=}\n    {stored=})")
-            if sha != stored:
-                log.warning(
-                    f"Partition '{name}': Hash mismatch ({size=} {sha=} {stored=})"
-                )
-            else:
-                log.info(f"Partition '{name}': Hash confirmed ({size=}).")
+            try:
+                size, calc_sha, stored_sha = header.check_image_hash(data)
+                size += len(stored_sha)  # Include the stored hash in the size
+                sha, stored = calc_sha.hex(), stored_sha.hex()
+                log.debug(f"{name}: {size=}\n       {sha=}\n    {stored=})")
+                if sha != stored:
+                    log.warning(
+                        f"Partition '{name}': Hash mismatch ({size=} {sha=} {stored=})"
+                    )
+                else:
+                    log.info(f"Partition '{name}': Hash confirmed ({size=}).")
+            except ValueError as err:
+                log.warning(f"Partition '{name}': {err}")
 
     def check_data_partitions(self, new_table: PartitionTable) -> None:
         """Erase any data partitions in `new_table` which have been moved or resized."""
