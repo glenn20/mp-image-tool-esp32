@@ -138,14 +138,15 @@ operations on attached esp32 devices:
 
 ### Install from PYPI
 
+- Using uv: `uv tool install mp-image-tool-esp32`,
 - Using pip: `pip install mp-image-tool-esp32`, or
-- Using uv: `uv tool install mp-image-tool-esp32`.
+- Using pipx: `pipx install mp-image-tool-esp32`.
 
-Support for the `fs` command (reading, checking and copying files to/from
-littlefs filesystems on your device), requires selecting the `littlefs` extra
-eg: `pip install mp-image-tool-esp32[littlefs]`. This has been made available as
-an extra because installing the `littlefs-python` package requires extra build
-tools on your computer, which you may avoid if you don't need filesystem access.
+Sinve version `v0.0.14`, support for the `fs` command (reading, checking and
+copying files to/from littlefs filesystems on your device), requires selecting
+the `littlefs` extra eg: `uv tool install mp-image-tool-esp32[littlefs]`.
+`littlefs` support has been made available as an extra, which you may avoid if
+you don't need filesystem access.
 
 ### Install from github source
 
@@ -156,7 +157,7 @@ dependencies and dev environments.
 git clone https://github.com/glenn20/mp-image-tool-esp32
 cd mp-image-tool-esp32
 uv build  # To build an installable .whl file
-uv tool install dist/mp_image_tool_esp32-0.0.12-py3-none-any.whl
+uv tool install dist/mp_image_tool_esp32-0.0.14-py3-none-any.whl
 ```
 
 To run the tests: `uv run pytest` or `uv run tox`.
