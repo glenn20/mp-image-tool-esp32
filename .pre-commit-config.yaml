@@ -1,0 +1,40 @@
+default_install_hook_types: [
+  pre-commit, pre-merge-commit, pre-push,
+  post-checkout, post-commit]
+default_stages: [pre-commit, pre-merge-commit, pre-push, manual]
+exclude: (^tests/.*/.*$)
+repos:
+- repo: https://github.com/pre-commit/pre-commit-hooks
+  rev: v4.6.0
+  hooks:
+    - id: check-yaml
+    - id: end-of-file-fixer
+    - id: trailing-whitespace
+
+- repo: https://github.com/astral-sh/uv-pre-commit
+  rev: 0.7.10
+  hooks:
+    - id: uv-lock
+    - id: uv-export
+
+- repo: local
+  hooks:
+    - id: static-checks
+      name: static-checks
+      description: >-
+        This hook runs all static checks, including mypy, and ruff.
+        It is recommended to run this on pre-commit and pre-push.
+      always_run: true
+      language: python
+      entry: uv run tox -m static
+
+    - id: update-version
+      name: update-version
+      description: >-
+        This hook uses the hatch-vcs module to update the `_version.py` file.
+        Call this on post-commit and post-checkout.
+      stages: [post-commit, post-checkout, manual]
+      always_run: true
+      language: python
+      pass_filenames: false
+      entry: uv run --frozen hatch build --hooks-only
