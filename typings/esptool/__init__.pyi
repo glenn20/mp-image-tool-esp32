@@ -2,9 +2,7 @@ from typing import Callable, Sequence
 
 import serial
 
-
 class StubFlasher: ...
-
 
 class ESPLoader:
     CHIP_NAME: str
@@ -19,6 +17,5 @@ class ESPLoader:
     def erase_region(self, offset: int, size: int) -> None: ...
     def run_stub(self, stub: StubFlasher | None = None) -> "ESPLoader": ...
     def hard_reset(self) -> None: ...
-
 
 def main(argv: Sequence[str], esp: ESPLoader | None) -> None: ...

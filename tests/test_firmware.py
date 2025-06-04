@@ -26,39 +26,31 @@ def mpi_check_output(firmware: Path, args: str) -> None:
     assert_output(OUTPUTS[args], output)
 
 
-# Unnecessary if running mp_image_tool_esp32 as a module rather than a script
-# def test_python_version(firmware: Path):
-#     mpi_run(firmware)
-#     match = re.search(r"Running pytest .*Python ([0-9.]+)", log_messages())
-#     assert match is not None
-#     assert match.group(1) == platform.python_version()
-
-
-def test_firmware_file_valid(firmware: Path):
+def test_firmware_file_valid(firmware: Path) -> None:
     mpi_check(firmware, "")
 
 
-def test_table_ota(firmware: Path):
+def test_table_ota(firmware: Path) -> None:
     mpi_check_output(firmware, "--table ota --app-size 0x1f0B")
 
 
-def test_table_default(firmware: Path):
+def test_table_default(firmware: Path) -> None:
     mpi_check_output(firmware, "--table default")
 
 
-def test_table_custom(firmware: Path):
+def test_table_custom(firmware: Path) -> None:
     mpi_check_output(firmware, "--table nvs=7B,factory=2M,vfs=1M,vfs2=fat:0")
 
 
-def test_delete(firmware: Path):
+def test_delete(firmware: Path) -> None:
     mpi_check_output(firmware, "--delete phy_init")
 
 
-def test_resize(firmware: Path):
+def test_resize(firmware: Path) -> None:
     mpi_check_output(firmware, "--resize vfs=1M")
 
 
-def test_add(firmware: Path):
+def test_add(firmware: Path) -> None:
     mpi_check_output(firmware, "--resize vfs=1M --add data=fat:50B")
 
 
@@ -71,19 +63,19 @@ def mpi_check_output_flash_size(firmware: Path, args: str) -> bool:
     return True
 
 
-def test_flash_size(firmware: Path):
+def test_flash_size(firmware: Path) -> None:
     if not mpi_check_output_flash_size(firmware, "--flash-size 8M"):
         pytest.skip("Skipping test_flash_size because device flash size is too small")
 
 
-def test_flash_size_vfs(firmware: Path):
+def test_flash_size_vfs(firmware: Path) -> None:
     if not mpi_check_output_flash_size(firmware, "--flash-size 8M --resize vfs=0"):
         pytest.skip(
             "Skipping test_flash_size_vfs because device flash size is too small"
         )
 
 
-def test_read(firmware: Path, bootloader: bytes):
+def test_read(firmware: Path, bootloader: bytes) -> None:
     out = Path("out.bin")
     mpi_run(firmware, f"--read bootloader={out.name}")
     output = out.read_bytes()
@@ -95,7 +87,7 @@ def test_read(firmware: Path, bootloader: bytes):
     assert output == bootloader
 
 
-def test_write(firmware: Path):
+def test_write(firmware: Path) -> None:
     input = bytes(range(32)) * 8  # 256 data bytes to write
     infile, outfile = Path("input.bin"), Path("out2.bin")
     infile.write_bytes(bytes(range(32)) * 8)
@@ -103,12 +95,12 @@ def test_write(firmware: Path):
     mpi_run(firmware, f"--read phy_init={outfile}")
     output = outfile.read_bytes()
     assert len(output) == 4096
-    output = output.rstrip(b"\xFF")
+    output = output.rstrip(b"\xff")
     assert len(output) == len(input)
     assert output == input
 
 
-def test_erase(firmware: Path):
+def test_erase(firmware: Path) -> None:
     Path("input.bin").write_bytes(bytes(range(32)) * 8)
     mpi_run(firmware, "--write phy_init=input.bin")
     mpi_run(firmware, "--read phy_init=output1.bin")
@@ -117,12 +109,12 @@ def test_erase(firmware: Path):
     input = Path("input.bin").read_bytes()
     output1 = Path("output1.bin").read_bytes()
     output2 = Path("output2.bin").read_bytes()
-    assert output1.rstrip(b"\xFF") == input
+    assert output1.rstrip(b"\xff") == input
     assert len(output2) == 4096
     assert output2.count(0xFF) == len(output2)
 
 
-def test_extract_app(firmware: Path, app_image: bytes):
+def test_extract_app(firmware: Path, app_image: bytes) -> None:
     app = Path("app.bin")
     mpi_run(firmware, "--extract-app", output=app)
     output = app.read_bytes()
@@ -130,7 +122,7 @@ def test_extract_app(firmware: Path, app_image: bytes):
     assert output == app_image
 
 
-def test_check_app(firmware: Path, app_image: bytes, bootloader: bytes):
+def test_check_app(firmware: Path, app_image: bytes, bootloader: bytes) -> None:
     mpi_run(firmware, "--check-app")
     output = log_messages()
     for line in (
@@ -142,7 +134,7 @@ def test_check_app(firmware: Path, app_image: bytes, bootloader: bytes):
         assert line in output
 
 
-def test_file_integrity(firmware: Path):
+def test_file_integrity(firmware: Path) -> None:
     if options.port:
         pytest.skip("Skipping test_file_integrity because --port is set")
     sha1 = hashlib.sha256(firmware.read_bytes()).hexdigest()
@@ -154,7 +146,7 @@ def test_file_integrity(firmware: Path):
     assert sha1 == sha3
 
 
-def test_read_write(firmware: Path):
+def test_read_write(firmware: Path) -> None:
     if options.port:
         pytest.skip("Skipping test_read_write because --port is set")
     sha1 = hashlib.sha256(firmware.read_bytes()).hexdigest()

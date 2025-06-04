@@ -75,7 +75,7 @@ class Options(Namespace):
 options: Options = Options()
 
 
-def pytest_addoption(parser: Namespace):
+def pytest_addoption(parser: Namespace) -> None:
     parser.addoption(
         "--port",
         dest="port",
@@ -88,7 +88,7 @@ def pytest_addoption(parser: Namespace):
         dest="firmware",
         action="store",
         default="",
-        help="Nmae of the firmware file to use",
+        help="Name of the firmware file to use",
     )
     parser.addoption(
         "--args",
@@ -106,7 +106,7 @@ def pytest_addoption(parser: Namespace):
     )
 
 
-def download_firmware_files():
+def download_firmware_files() -> None:
     """Download the firmware files if they are not present in 'datadir'."""
     if not datadir.exists():
         datadir.mkdir()
@@ -120,7 +120,7 @@ def download_firmware_files():
 
 
 ## pytest_configure is called after command line options have been parsed
-def pytest_configure(config: Config):
+def pytest_configure(config: Config) -> None:
     global options
     global firmware_file
     download_firmware_files()  # Download firmware files if needed
@@ -140,7 +140,7 @@ def pytest_configure(config: Config):
 def my_setup(
     capsys: pytest.CaptureFixture[str],
     caplog: pytest.LogCaptureFixture,
-):
+) -> None:
     global capsys_, caplog_
     capsys_ = capsys
     caplog_ = caplog
@@ -207,7 +207,7 @@ def testdir(tmp_path_factory: Any) -> Path:
     """A fixture to create a temporary directory for testing (session scope).
     Will set the current working directory to the temporary directory
     and return the directory as a Path object."""
-    path: Path = tmp_path_factory.mktemp("test_dir")  # type: ignore
+    path: Path = tmp_path_factory.mktemp("test_dir")
     assert isinstance(path, Path)
     os.chdir(path)
     return path
