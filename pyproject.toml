@@ -9,37 +9,45 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Embedded Systems",
+    "Topic :: Software Development :: Libraries",
+    "Typing :: Typed",
 ]
 requires-python = ">=3.8"
+dynamic = ["version"]
 dependencies = [
     "esptool>=4.6.2",
     "rich>=10.12.0",
     "more-itertools>=8.8.0",
     "typing-extensions>=4.12",
 ]
-dynamic = ["version"]
+optional-dependencies.littlefs = [
+    "littlefs-python>=0.12.0",
+]
 
 [project.scripts]  # The entry points for the command line tools
 mp-image-tool-esp32 = "mp_image_tool_esp32.main:main"
 
-[project.optional-dependencies]
-littlefs = ["littlefs-python>=0.12.0"]
-
 [dependency-groups]
-typing = ["mypy>=0.910", "types-requests>=2.32.0.20240914", "types-pyserial>=3.5"]
+typing = [
+    "mypy>=0.910", "types-requests>=2.32", "types-pyserial>=3.5", "types-pyyaml>=6.0"
+]
 test = [
     {include-group = "typing"},
-    "ruff>=0.6.7", "pytest>=8.3.2", "pytest-cov>=3.0.0", "requests>=2.32.3",
-    "pyyaml>=6.0.2", "tox>=4.22.0", "tox-uv>=0.3.0",
+    "ruff>=0.6.7", "pytest>=8.3.2", "pytest-cov>=3.0.0", "pytest-sugar>=1.0.0",
+    "requests>=2.32.3", "pyyaml>=6.0.2", "tox>=4.22.0", "tox-uv>=1.13",
 ]
 dev = [
     {include-group = "test"},
-    "keyring>=25",  # For uv publish --keyring-provider=subprocess
-    # Used by .git/hooks/post-{commit,checkout} to update _version.py:
-    #   uv run --frozen hatch build --hooks-only
-    "hatch>=1.12.0",
-    "hatch-vcs>=0.3.0",  # For building and updating _version.py
+    # For building and updating _version.py
+    "hatch>=1.12.0", "hatch-vcs>=0.3.0", "pip>=25.0.1",
 ]
 
 [build-system]
@@ -48,9 +56,8 @@ build-backend = "hatchling.build"
 
 # Build python packages and update version number
 [tool.hatch]
-build.targets.wheel.packages = ["src/mp_image_tool_esp32"]
-version.source = "vcs"  # Get the version from git, eg: 0.0.6.dev0+g1234567
 build.hooks.vcs.version-file = "src/mp_image_tool_esp32/_version.py"
+version.source = "vcs"  # Get the version from git, eg: 0.0.6.dev0+g1234567
 # Drop the local version part (eg: +g1234567) or pypi will reject package
 version.raw-options.local_scheme = "no-local-version"
 # A manually triggered github release workflow may generate a new tag
@@ -64,40 +71,44 @@ version.raw-options.git_describe_command = [
     "--match", "v*.[0-9][0-9][0-9]",
 ]
 
+[tool.mypy]
+files = ["src", "tests"]
+python_version = "3.9"
+mypy_path = "typings"
+disallow_untyped_defs = true
+warn_return_any = true
+warn_unused_ignores = true
+
+[tool.ruff]
+exclude = ["_version.py", "tests/data"]
+lint.extend-select = ["I"]  # Enable ruffs isort rules (for compat with vscode ruff)
+
+[tool.coverage]
+run.source = ["src", "tests"]
+run.omit = ["_version.py"]
+report.skip_covered = true
+append = true
+
 # https://tox.wiki/en/latest/config.html#pyproject-toml-native
 [tool.tox]
-requires = ["tox>=4.22", "tox-uv>=1.13"]
 env_list = [
     "clean", "typing", "lint", "format",
     "3.8", "3.9", "3.10", "3.11", "3.12", "3.13"
 ]
+labels.static = ["clean", "typing", "lint", "format"]
 env.clean.commands = [["coverage", "erase"]]  # Cleanup coverage data
 env.clean.skip_install = true
 env.typing.commands = [["mypy"]]
 env.lint.commands = [["ruff", "check"]]
 env.format.commands = [["ruff", "format", "--check"]]
-env.3.8.commands = [["pytest", "--cov=mp_image_tool_esp32"]]
-env.3.13.commands = [["pytest", "--cov=mp_image_tool_esp32"]]
-env_run_base.commands = [["pytest"]]
-env_run_base.dependency_groups = ["test"]
+
+# Default command and options for all the environments
+env_run_base.commands = [["pytest", {replace = "posargs", extend = true}]]
+env_run_base.dependency_groups = ["test"]  # Ensure test dependencies are installed
 env_run_base.extras = ["littlefs"]  # Include optional dependencies
-env_run_base.package = "wheel"  # Build package wheel and install into environments
-env_run_base.wheel_build_env = ".pkg"  # Re-use one wheel for each environment
+env_run_base.package = "editable"  # Use the editable install mode
+env_run_base.runner = "uv-venv-runner"  # We love uv
 
-[tool.mypy]
-files = ["src"]
-python_version = "3.9"
-disallow_untyped_defs = true
-warn_return_any = true
-warn_unused_ignores = true
-mypy_path = "typings"
-
-[tool.ruff]
-include = ["src/**/*.py"]
-exclude = ["_version.py"]
-lint.extend-select = ["I"]  # Enable ruffs isort rules (for compat with vscode ruff)
-
-[tool.coverage]
-run.omit = ["_version.py"]
-report.skip_covered = true
-append = true
+# Overrides for the latest python version
+env.3.13.commands = [["pytest", "--cov", {replace = "posargs", extend = true}]]
+env.3.13.labels = ["cov", "coverage", "latest"]
