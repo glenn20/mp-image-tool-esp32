@@ -70,6 +70,7 @@ Micropython app fills 82.3% of factory partition (350 kB free)
   - `--table nvs=6B,phy_init=1B,factory=0x1f0B,vfs=0` : specify a table layout
   - `--resize factory=2M,vfs=0x400K` : resize any partition (adjust other
     parts to fit)
+  - `--rename factory=app,ffat=vfs` : rename one or more partitions
   - `--delete phy_init --resize nvs=0` : delete 'phy_init' and expand 'nvs' to
     use free space
   - `--add vfs2=fat:2M:1M` : add a new FS data partition at offset 0x200000 with
@@ -427,6 +428,7 @@ usage: mp-image-tool-esp32 [-h] [-o FILE] [-q] [-n] [-x] [-f SIZE] [-a SIZE]
                            [--delete NAME1[,NAME2]]
                            [--add NAME1:SUBTYPE:OFFSET:SIZE[,NAME2,...]]
                            [--resize NAME1=SIZE1[,NAME2=SIZE2]]
+                           [--rename NAME1=NEW1[,NAME2=NEW2]]
                            [--erase NAME1[,NAME2]] [--erase-fs NAME1[,NAME2]]
                            [--read NAME1=FILE1[,NAME2=FILE2,bootloader=FILE,...]]
                            [--write NAME1=FILE1[,NAME2=FILE2,bootloader=FILE,...]]
@@ -476,6 +478,8 @@ options:
                         resize partitions eg. --resize
                         factory=2M,nvs=5B,vfs=0. If SIZE is 0, expand
                         partition to available space
+  --rename NAME1=NEW1[,NAME2=NEW2,...]
+                        rename partitions, eg. --rename ffat=vfs,factory=app
   --erase NAME1[,NAME2]
                         erase the named partitions
   --erase-fs NAME1[,NAME2]
@@ -500,10 +504,12 @@ options:
 
 Where SIZE is a decimal or hex number with an optional suffix (M=megabytes,
 K=kilobytes, B=blocks (0x1000=4096 bytes)). --fs commands include: ls, get,
-put, mkdir, rm, rename, cat, info, mkfs, df and grow. Options --erase-fs and
---ota-update can only be used when operating on serial-attached devices (not
-firmware files). If the --flash option is provided, the firmware (including
-any changes made) will be flashed to the device, eg: `mp-image-tool-esp32
-firmware.bin --flash u0` is a convenient way to flash firmware to a device.
+put, mkdir, rm, rename, cat, info, mkfs, df and grow. --fs will swallow any
+non-option arguments following, so use `--` to separate them if needed, eg
+`--fs ls /lib /bin -- firmware.bin`. Options --erase-fs and --ota-update can
+only be used when operating on serial-attached devices (not firmware files).
+If the --flash option is provided, the firmware (including any changes made)
+will be flashed to the device, eg: `mp-image-tool-esp32 firmware.bin --flash u0`
+is a convenient way to flash firmware to a device.
 
 ```
