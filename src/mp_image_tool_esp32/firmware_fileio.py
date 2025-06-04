@@ -140,7 +140,7 @@ class FirmwareDeviceIO(BinaryIO):
 
     def read(self, size: int | None = None) -> bytes:
         size = size if size is not None else self._end - self._pos
-        log.debug(f"Reading {size:#x} bytes from {self._pos:#x}...")
+        log.debug(f"Reading {size:#x} bytes from offset {self._pos:#x}...")
         data = self.esptool.read_flash(self._pos, size)
         if len(data) != size:
             raise ValueError(f"Read {len(data)} bytes from device, expected {size}.")

@@ -124,15 +124,15 @@ usage = """
                             "--table default" (default (non-OTA) partition table),\
                             "--table nvs=7B,factory=2M,vfs=0". \
                             SUBTYPE is optional in most cases (inferred from name).
-    --delete NAME1[,NAME2] | delete the named partitions
+    --delete NAME1[,NAME2,...] | delete the named partitions
     --add NAME1:SUBTYPE:OFFSET:SIZE[,NAME2,...] \
                         | add new partitions to table
-    --resize NAME1=SIZE1[,NAME2=SIZE2] \
+    --resize NAME1=SIZE1[,NAME2=SIZE2,...] \
                         | resize partitions \
                             eg. --resize factory=2M,nvs=5B,vfs=0. \
                             If SIZE is 0, expand partition to available space
-    --erase NAME1[,NAME2] | erase the named partitions
-    --erase-fs NAME1[,NAME2] \
+    --erase NAME1[,NAME2,...] | erase the named partitions
+    --erase-fs NAME1[,NAME2,...] \
                         | erase first 4 blocks of a partition on flash storage.\
                             Micropython will initialise filesystem on next boot.
     --read NAME1=FILE1[,NAME2=FILE2,bootloader=FILE,...] \
