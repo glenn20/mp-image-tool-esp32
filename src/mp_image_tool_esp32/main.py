@@ -155,7 +155,8 @@ usage = """
     K=kilobytes, B=blocks (0x1000=4096 bytes)).
 
     --fs commands include: ls, get, put, mkdir, rm, rename, cat, info, mkfs,
-    df, grow and more.
+    df, grow and more. --fs will swallow any non-option arguments following, so
+    use `--` to separate them if needed, eg `--fs ls /lib /bin -- firmware.bin`.
 
     Options --erase-fs and --ota-update can only be used when operating on
     serial-attached devices (not firmware files).

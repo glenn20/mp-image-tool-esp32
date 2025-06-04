@@ -1,7 +1,23 @@
 # mp-image-tool-esp32: Working with esp32 firmware files and devices
 
-![CI Tests](https://github.com/glenn20/mp-image-tool-esp32/actions/workflows/ci-tests.yaml/badge.svg)
-![CI Tests](https://github.com/glenn20/mp-image-tool-esp32/actions/workflows/ci-release.yaml/badge.svg)
+[![PyPI](
+  https://img.shields.io/pypi/v/mp-image-tool-esp32)](
+  https://pypi.org/project/mp-image-tool-esp32)
+[![PyPI Supported Python Versions](
+  https://img.shields.io/pypi/pyversions/mp-image-tool-esp32.svg)](
+  https://pypi.python.org/pypi/mp-image-tool-esp32/)
+[![GitHub Actions (Tests)](
+  https://github.com/glenn20/mp-image-tool-esp32/actions/workflows/ci-tests.yaml/badge.svg)](
+  https://github.com/glenn20/mp-image-tool-esp32/actions/workflows/ci-tests.yaml)
+[![GitHub Actions (Publish)](
+  https://github.com/glenn20/mp-image-tool-esp32/actions/workflows/ci-release.yaml/badge.svg)](
+  https://github.com/glenn20/mp-image-tool-esp32/actions/workflows/ci-release.yaml)
+[![PyPI - License](
+  https://img.shields.io/pypi/l/mp-image-tool-esp32)](
+  https://opensource.org/licenses/MIT)
+[![pre-commit](
+  https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](
+  https://github.com/pre-commit/pre-commit)
 
 Tool for manipulating partition tables and files in MicroPython esp32 firmware
 image files and device flash storage.
@@ -291,6 +307,12 @@ caching which should provide further performance improvements~~.
 Eg. `mp-image-tool-esp32 a0 --fs mkfs vfs --fs put ./rootfs/* /` will create
 a new littlefs filesystem on the 'vfs' partition and initialise it with the
 files from `./rootfs/` on the local computer.
+
+`--fs` commands will swallow any non-option arguments following, so use `--` to
+separate them if needed, eg:
+
+- `mp-image-tool-esp32 --fs ls /lib /bin -- firmware.bin` or
+- `mp-image-tool-esp32 firmware.bin --fs ls /lib /bin`.
 
 You can also use [`littlefs-python`](https://github.com/jrast/littlefs-python)
 to build filesystem partitions on your computer and flash them to the device,
