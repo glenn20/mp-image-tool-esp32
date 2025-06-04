@@ -99,8 +99,8 @@ def test_get_directory(mock_device: Path) -> None:
             print(f, f.is_file(), f.stat())
         raise e
     assert rootfs.is_dir()
-    new_files = list(rootfs.rglob("*"))
-    orig_files = list(mockfs_dir.rglob("*"))
+    new_files = sorted(list(rootfs.rglob("*")))
+    orig_files = sorted(list(mockfs_dir.rglob("*")))
     assert len(orig_files) > 3  # We expect 6 files in the mockfs
     assert len(new_files) == len(orig_files)
     for new, orig in zip(new_files, orig_files):
@@ -124,8 +124,8 @@ def test_put_directory(mock_device: Path) -> None:
     mpi_run(mock_device, f"-q --fs get rootfs {rootfs}")
     assert rootfs.is_dir()
     new_dir = rootfs / mockfs_dir.name
-    new_files = list(new_dir.rglob("*"))
-    orig_files = list(mockfs_dir.rglob("*"))
+    new_files = sorted(list(new_dir.rglob("*")))
+    orig_files = sorted(list(mockfs_dir.rglob("*")))
     assert len(new_files) == len(orig_files)
     for new, orig in zip(new_files, orig_files):
         assert new.relative_to(new_dir) == orig.relative_to(mockfs_dir)
