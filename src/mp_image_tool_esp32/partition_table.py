@@ -301,6 +301,21 @@ class PartitionTable(List[PartitionEntry]):
                 self[j] = self[j]._replace(size=self.max_size - self[j].offset)
         return new_size
 
+    def rename_part(self, name: str, new_name: str) -> None:
+        """Rename a partition in the partition table.
+        Raises:
+            PartitionError: If the partition with `old_name` does not exist or
+                if `new_name` already exists in the table.
+        """
+        i = self.index(self.by_name(name))
+        if any(p for p in self if p.name == new_name):
+            raise PartitionError(
+                f"Partition '{new_name}' already exists in table.", self
+            )
+        self[i] = self[i]._replace(
+            label=new_name.encode().ljust(PART_NAME_LEN, b"\x00")
+        )
+
     def check(self, app_size: int = 0) -> None:
         """Check the partition table for consistency.
         Raises `PartError` if any inconsistencies found."""

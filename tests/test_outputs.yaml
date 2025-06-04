@@ -70,6 +70,14 @@
     factory          app      factory     0x10000   0x1f0000   0x200000   0x0   (1.9 MB)
     vfs              data     fat        0x200000   0x100000   0x300000   0x0   (1.0 MB)
 
+--rename vfs=vfs2,factory=app: |
+  Partition table (flash size: 4MB):
+  # Name             Type     SubType      Offset       Size        End Flags
+    nvs              data     nvs          0x9000     0x6000     0xf000   0x0  (24.0 kB)
+    phy_init         data     phy          0xf000     0x1000    0x10000   0x0   (4.0 kB)
+    app              app      factory     0x10000   0x1f0000   0x200000   0x0   (1.9 MB)
+    vfs2             data     fat        0x200000   0x200000   0x400000   0x0   (2.0 MB)
+
 --resize vfs=1M --add data=fat:50B: |
   Partition table (flash size: 4MB):
   # Name             Type     SubType      Offset       Size        End Flags

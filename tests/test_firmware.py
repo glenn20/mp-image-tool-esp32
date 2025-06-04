@@ -50,6 +50,10 @@ def test_resize(firmware: Path) -> None:
     mpi_check_output(firmware, "--resize vfs=1M")
 
 
+def test_rename(firmware: Path) -> None:
+    mpi_check_output(firmware, "--rename vfs=vfs2,factory=app")
+
+
 def test_add(firmware: Path) -> None:
     mpi_check_output(firmware, "--resize vfs=1M --add data=fat:50B")
 

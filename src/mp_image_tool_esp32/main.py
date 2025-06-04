@@ -81,6 +81,7 @@ class TypedNamespace(argparse.Namespace):
     table: PartList
     delete: ArgList
     add: PartList
+    rename: ArgList
     resize: PartList
     erase: ArgList
     erase_fs: ArgList
@@ -131,6 +132,8 @@ usage = """
                         | resize partitions \
                             eg. --resize factory=2M,nvs=5B,vfs=0. \
                             If SIZE is 0, expand partition to available space
+    --rename NAME1=NEW1[,NAME2=NEW2,...] \
+                        | rename partitions, eg. --rename ffat=vfs,factory=app
     --erase NAME1[,NAME2,...] | erase the named partitions
     --erase-fs NAME1[,NAME2,...] \
                         | erase first 4 blocks of a partition on flash storage.\
@@ -294,6 +297,13 @@ def run_commands(argv: Sequence[str] | None = None) -> None:
             new_table.resize_part(name, new_size)
         new_table.check()
         extension += f"-resize={args.resize}"
+
+    if args.rename:  # --rename NAME1=NEW1[,NAME2=NEW2,...] : Rename partitions
+        for name, new_name in args.rename:
+            log.action(f"Renaming partition '{name}' to '{new_name}'...")
+            new_table.rename_part(name, new_name)
+        new_table.check()
+        extension += f"-rename={args.rename}"
 
     if args.add:  # --add NAME1=SUBTYPE:OFFSET:SIZE[,..] : Add new partitions
         for name, subtype, offset, size in args.add:
