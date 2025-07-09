@@ -69,6 +69,38 @@ version.raw-options.git_describe_command = [
     "--match", "v*.[0-9][0-9][0-9]",
 ]
 
+# For Github Actions workflow - see https://github.com/tox-dev/tox-gh
+[tool.tox.gh.python]
+"3.13" = ["clean", "typing", "lint", "format", "3.13"]
+"3.12" = ["3.12"]
+"3.11" = ["3.11"]
+"3.10" = ["3.10"]
+"3.9"  = ["3.9"]
+
+# https://tox.wiki/en/latest/config.html#pyproject-toml-native
+[tool.tox]
+env_list = [
+    "clean", "typing", "lint", "format",
+    "3.9", "3.10", "3.11", "3.12", "3.13"
+]
+labels.static = ["clean", "typing", "lint", "format"]
+env.clean.commands = [["coverage", "erase"]]  # Cleanup coverage data
+env.clean.skip_install = true
+env.typing.commands = [["mypy"]]
+env.lint.commands = [["ruff", "check"]]
+env.format.commands = [["ruff", "format", "--check"]]
+
+# Default command and options for all the environments
+env_run_base.extras = ["littlefs"]  # Include optional dependencies
+env_run_base.commands = [["pytest", {replace = "posargs", extend = true}]]
+env_run_base.dependency_groups = ["test"]  # Ensure test dependencies are installed
+env_run_base.package = "editable"  # Use the editable install mode
+env_run_base.runner = "uv-venv-runner"  # We love uv
+
+# Overrides for the latest python version
+env.3.13.commands = [["pytest", "--cov", {replace = "posargs", extend = true}]]
+env.3.13.labels = ["cov", "coverage", "latest"]
+
 [tool.mypy]
 files = ["src", "tests"]
 python_version = "3.9"
@@ -86,28 +118,3 @@ run.source = ["src", "tests"]
 run.omit = ["_version.py"]
 report.skip_covered = false
 append = true
-
-# https://tox.wiki/en/latest/config.html#pyproject-toml-native
-[tool.tox]
-env_list = [
-    "clean", "typing", "lint", "format",
-    "3.9", "3.10", "3.11", "3.12", "3.13"
-]
-labels.static = ["clean", "typing", "lint", "format"]
-env.clean.commands = [["coverage", "erase"]]  # Cleanup coverage data
-env.clean.skip_install = true
-env.typing.commands = [["mypy"]]
-env.lint.commands = [["ruff", "check"]]
-env.format.commands = [["ruff", "format", "--check"]]
-
-# Default command and options for all the environments
-env_run_base.commands = [["pytest", {replace = "posargs", extend = true}]]
-env_run_base.dependency_groups = ["test"]  # Ensure test dependencies are installed
-env_run_base.extras = ["littlefs"]  # Include optional dependencies
-env_run_base.package = "editable"  # Use the editable install mode
-env_run_base.runner = "uv-venv-runner"  # We love uv
-env_run_base.skip_install = true
-
-# Overrides for the latest python version
-env.3.13.commands = [["pytest", "--cov", {replace = "posargs", extend = true}]]
-env.3.13.labels = ["cov", "coverage", "latest"]
