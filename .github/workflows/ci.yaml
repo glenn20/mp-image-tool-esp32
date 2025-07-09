@@ -1,0 +1,95 @@
+name: CI workflow for python projects
+
+# Run the CI test workflow of jobs which includes:
+# - `test`: Run tests (including code checks) using `tox`.
+# - `build`: Build the python package.
+# - `publish-test`: Publish the package to test.pypi.org.
+# - `publish`: Publish the package to pypi.org (also runs `publish-test`).
+# - `release`: Create a GitHub release.
+
+# Configure the workflows here. Each environment variable name should be a
+# wildcard matching the
+# `on-<github.event_name>-<github.ref_type>-<github.ref_name>` format. For
+# example, if the event is a push to a tag `v1.0.0`, the environment variable
+# `on-push-tag-v*` will match. The value of the matching variable will be
+# written to $GITHUB_OUTPUT to set the jobs, python versions, and operating
+# systems to run the workflow on. The first match found is used.
+env:
+  on-push-tag-*: |  # Push version tag matching "v*", eg. "v1.0.0"
+    jobs=["test", "build", "publish", "release"]
+    python-version=["3.9", "3.10", "3.11", "3.12", "3.13"]
+    os=["ubuntu-latest", "windows-latest", "macos-latest"]
+  on-push-branch-main: |  # Push commits to main branch
+    jobs=["test", "build", "publish-test"]
+    python-version=["3.9", "3.10", "3.11", "3.12", "3.13"]
+    os=["ubuntu-latest", "windows-latest", "macos-latest"]
+  on-push-branch-*: |  # Push commits to other branches (including dev)
+    jobs=["test", "build"]
+    python-version=["3.9", "3.13"]
+    os=["ubuntu-latest"]
+  on-workflow_dispatch-branch-*: |  # Manual trigger of the workflow
+    jobs=["test", "build"]
+    python-version=["3.9", "3.13"]
+    os=["ubuntu-latest"]
+
+on:
+  push:
+    branches: ["**"]  # Push commits to any branch
+    tags: ["v[0-9]*"]  # Publish on tags matching "v*", eg. "v1.0.0"
+
+####### Edit above this line - leave the rest of the workflow intact.
+
+  workflow_dispatch:  # Allow manual triggering of the workflow
+
+jobs:
+  config:  # Select the workflow config based on the event trigger.
+    name: Configure workflow
+    outputs:
+      jobs: ${{ steps.config.outputs.jobs }}
+      os: ${{ steps.config.outputs.os }}
+      python-version: ${{ steps.config.outputs.python-version }}
+    runs-on: ubuntu-latest
+    steps:
+      - id: config
+        uses: glenn20/python-ci/actions/config@v2
+        with:
+          config: ${{ toJson(env) }}
+
+  ci-workflow:  # Run the CI workflow based on the config.
+    name: CI workflow
+    needs: config
+    uses: glenn20/python-ci/.github/workflows/ci-workflow-tox.yaml@v2
+    with:
+      jobs: ${{ needs.config.outputs.jobs }}
+      os: ${{ needs.config.outputs.os }}
+      python-version: ${{ needs.config.outputs.python-version }}
+
+  # We can't use trusted publishing from a reusable workflow in another
+  # repository, so the publish workflows must be run from here.
+  publish:
+    name: Publish to pypi.org
+    needs: [config, ci-workflow]
+    # Will match "publish-test" or "publish" in the `jobs` json string.
+    if: ${{ contains(needs.config.outputs.jobs, 'publish') }}
+    environment:
+      name: publish-pypi
+      url: ${{ steps.publish.outputs.url }}
+    permissions:
+      id-token: write  # Required for trusted publishing
+    runs-on: ubuntu-latest
+    steps:
+      - id: publish
+        uses: glenn20/python-ci/actions/publish@v2
+        with:
+          test-only: ${{ contains(fromJson(needs.config.outputs.jobs), 'publish') && 'false' || 'true' }}
+
+  # We run the github release job here instead of in ci-workflow, as it requires
+  # permissions to sign the release and to simplify the workflow dependency
+  # graph on the github UI.
+  release:
+    needs: [config, ci-workflow]
+    uses: glenn20/python-ci/.github/workflows/github-release.yaml@v2
+    permissions:
+      id-token: write  # Required for signing the release
+      contents: write  # Required for github release
+    if: ${{ contains(fromJson(needs.config.outputs.jobs), 'release') }}

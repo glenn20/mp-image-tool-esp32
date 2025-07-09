@@ -98,7 +98,7 @@ env_run_base.package = "editable"  # Use the editable install mode
 env_run_base.runner = "uv-venv-runner"  # We love uv
 
 # Overrides for the latest python version
-env.3.13.commands = [["pytest", "--cov", {replace = "posargs", extend = true}]]
+env.3.13.commands = [["python", "-m", "pytest", "--cov", {replace = "posargs", extend = true}]]
 env.3.13.labels = ["cov", "coverage", "latest"]
 
 [tool.mypy]
