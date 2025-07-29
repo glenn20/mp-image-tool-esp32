@@ -7,11 +7,8 @@
   https://img.shields.io/pypi/pyversions/mp-image-tool-esp32.svg)](
   https://pypi.python.org/pypi/mp-image-tool-esp32/)
 [![GitHub Actions (Tests)](
-  https://github.com/glenn20/mp-image-tool-esp32/actions/workflows/ci-tests.yaml/badge.svg)](
-  https://github.com/glenn20/mp-image-tool-esp32/actions/workflows/ci-tests.yaml)
-[![GitHub Actions (Publish)](
-  https://github.com/glenn20/mp-image-tool-esp32/actions/workflows/ci-release.yaml/badge.svg)](
-  https://github.com/glenn20/mp-image-tool-esp32/actions/workflows/ci-release.yaml)
+  https://github.com/glenn20/mp-image-tool-esp32/actions/workflows/ci.yaml/badge.svg)](
+  https://github.com/glenn20/mp-image-tool-esp32/actions/workflows/ci.yaml)
 [![PyPI - License](
   https://img.shields.io/pypi/l/mp-image-tool-esp32)](
   https://opensource.org/licenses/MIT)
@@ -27,7 +24,8 @@ storage on serial-attached ESP32 devices. It has been tested to work with ESP32,
 ESP32-S2 and ESP32-S3 firmware images and devices.
 
 **Contents: [Features](#features) | [Installation](#installation) |
-[Examples](#examples) | [Filesystem Operations](#filesystem-operations) | [OTA Updates](#ota-firmware-updates) | [Usage](#usage)**
+[Examples](#examples) | [Filesystem Operations](#filesystem-operations) |
+[OTA Updates](#ota-firmware-updates) | [Usage](#usage)**
 
 ```console
 ❯ mp-image-tool-esp32 ESP32_GENERIC-20240602-v1.23.0.bin
