@@ -544,6 +544,23 @@ wheels = [
 ]
 
 [[package]]
+name = "git-cliff"
+version = "2.10.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ec/e0/3518b6cd65c8ecba1639db5455f4b5d5a3c779277548d8873ac2a684c8d5/git_cliff-2.10.0.tar.gz", hash = "sha256:35a196b879f5b3beb47859bffc24d2c2c8e672db4f1ddfc45c334d742a2a5071", size = 98891, upload-time = "2025-07-27T12:32:17.643Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/75/d6/38f719443ce041ee7281ca8301e041d93d50f9bd050a0a62fd7f2ebe0bd6/git_cliff-2.10.0-py3-none-macosx_10_12_x86_64.whl", hash = "sha256:87eb39c6d2e14685d97329bced8965423d2c6a63a5b3940c67b4897defcf250d", size = 6592013, upload-time = "2025-07-27T12:32:01.359Z" },
+    { url = "https://files.pythonhosted.org/packages/ca/56/b0b70d980a31a7f286de5bcbf7b185f9b65fed427201d55d2bca549fa3a8/git_cliff-2.10.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:f231ce77134bccc8fd1460322810105305ce40b0ece2afbfa8064c7114f33552", size = 6130469, upload-time = "2025-07-27T12:32:03.247Z" },
+    { url = "https://files.pythonhosted.org/packages/d6/5b/dac03db5f25ba6bb72d0c2ffe916504a78858992fa8bd74e2b6e8461ad43/git_cliff-2.10.0-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:9e7569bc299eb0f472d5953f4cccb327d70ddb85b000fa5bc55aa37dc68f512d", size = 6483924, upload-time = "2025-07-27T12:32:04.949Z" },
+    { url = "https://files.pythonhosted.org/packages/76/f6/dd69caf01e6de6ac080ca25831b6f0a72c55c1ee9f8a849bc40f07132de0/git_cliff-2.10.0-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:cc2395a0eba440dabbeb7ecef48ed3467b21a59f50a40a529db762ce46ea9bf9", size = 6979540, upload-time = "2025-07-27T12:32:06.685Z" },
+    { url = "https://files.pythonhosted.org/packages/39/d1/438344cd8365399f2ea257ce2f7dd62dfd440be4d9bdbbdc84af239bf183/git_cliff-2.10.0-py3-none-manylinux_2_28_aarch64.whl", hash = "sha256:a723a03a95576daf8fccfc0fd19ac125e78bca59c604cc9dfa4cae1feb241326", size = 6533676, upload-time = "2025-07-27T12:32:08.534Z" },
+    { url = "https://files.pythonhosted.org/packages/6f/d0/e54338e8b076684999e7e8fc367847334b823ef123039c8faed3038abaa0/git_cliff-2.10.0-py3-none-manylinux_2_5_i686.manylinux1_i686.whl", hash = "sha256:996cd311989f4a98fd65d7aaef0b6e905ebaf3baeb5ccf282e543b975a12bde8", size = 6774091, upload-time = "2025-07-27T12:32:10.018Z" },
+    { url = "https://files.pythonhosted.org/packages/5a/cc/87a85288f72372f4dea34a72b1d3c64c4f060de2a175f9ec218e8fa77a9f/git_cliff-2.10.0-py3-none-manylinux_2_5_x86_64.manylinux1_x86_64.whl", hash = "sha256:8cff49c8c950e8ee512e5e3256602f39a111a7121017a74e3a75fcad618babc5", size = 7192640, upload-time = "2025-07-27T12:32:11.874Z" },
+    { url = "https://files.pythonhosted.org/packages/24/83/68cbe1da9b7ad576cd80480a0c1e0aed679a4903188a60a7ac4246d717e0/git_cliff-2.10.0-py3-none-win32.whl", hash = "sha256:23b7638ad3b62e3175044331b2faef8a918fdd52e5a222db818dbd5492632299", size = 6190570, upload-time = "2025-07-27T12:32:13.687Z" },
+    { url = "https://files.pythonhosted.org/packages/1b/17/29a1c10d456fefa82d8a45a0df7cc0bf23bc872bda757c35b1405193f3c0/git_cliff-2.10.0-py3-none-win_amd64.whl", hash = "sha256:0df87ff65bf484647290bb8bfb1104d5e283945eb44090a9e49ea3c520e8b64d", size = 6977113, upload-time = "2025-07-27T12:32:15.455Z" },
+]
+
+[[package]]
 name = "h11"
 version = "0.16.0"
 source = { registry = "https://pypi.org/simple" }
@@ -863,6 +880,7 @@ littlefs = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "git-cliff" },
     { name = "hatch" },
     { name = "hatch-vcs" },
     { name = "mypy" },
@@ -914,6 +932,7 @@ provides-extras = ["littlefs"]
 
 [package.metadata.requires-dev]
 dev = [
+    { name = "git-cliff", specifier = ">=2.0" },
     { name = "hatch", specifier = ">=1.12.0" },
     { name = "hatch-vcs", specifier = ">=0.3.0" },
     { name = "mypy", specifier = ">=0.910" },
